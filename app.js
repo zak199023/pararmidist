@@ -3,6 +3,9 @@ const CONFIG = { supabaseUrl: "https://hzosrdvaajjfenbzjxhg.supabase.co", supaba
 const money = n => new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(Number(n||0));
 const $ = s => document.querySelector(s);
 let db = null, products = [], cart = JSON.parse(localStorage.getItem("prd-cart")||"[]"), isAdmin = false;
+let promoConfig = {active:false, discount_rate:5, starts_at:null, ends_at:null};
+let promoConfigLoaded = false;
+let adminOrders = [], adminProducts = [], adminCustomers = [], adminPromo = null, adminPromoError = null, adminTab = "overview";
 const sample = [
  {id:"demo-1",name:"Sérum éclat visage",brand:"Sélection beauté",category:"Cosmétiques & Beauté",description:"Un essentiel pour compléter votre routine beauté.",price:189,promo_price:null,stock:12,image_url:"",sku:"PRD-001",published:true},
  {id:"demo-2",name:"Crème hydratante",brand:"Soin quotidien",category:"Soins dermatologiques",description:"Une texture confortable pour le soin quotidien.",price:145,promo_price:129,stock:8,image_url:"",sku:"PRD-002",published:true},
@@ -12,6 +15,23 @@ const sample = [
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2600)}
 function configured(){return !!(CONFIG.supabaseUrl&&CONFIG.supabaseAnonKey)}
 if(configured()&&window.supabase){db=window.supabase.createClient(CONFIG.supabaseUrl,CONFIG.supabaseAnonKey)}
+function promoIsActive(){
+ if(!promoConfig.active)return false;
+ const now=Date.now();
+ return (!promoConfig.starts_at||now>=new Date(promoConfig.starts_at).getTime())&&(!promoConfig.ends_at||now<=new Date(promoConfig.ends_at).getTime());
+}
+function priceInfo(p){
+ const hasProductPromo=p.promo_price!==null&&p.promo_price!==undefined&&Number(p.promo_price)>=0;
+ const base=hasProductPromo?Number(p.promo_price):Number(p.price);
+ const rate=(!hasProductPromo&&promoIsActive())?Number(promoConfig.discount_rate||5):0;
+ const final=Math.round((base*(1-rate/100)+Number.EPSILON)*100)/100;
+ return {base,final,rate,hasProductPromo,compareAt:Number(p.price),saving:Math.round((base-final+Number.EPSILON)*100)/100};
+}
+async function loadPromoConfig(){
+ if(!db)return;
+ const {data,error}=await db.from("promotion_settings").select("active,discount_rate,starts_at,ends_at").eq("id",1).maybeSingle();
+ if(!error&&data){promoConfig=data;promoConfigLoaded=true}else{promoConfig={active:false,discount_rate:5,starts_at:null,ends_at:null};promoConfigLoaded=false;if(error)console.warn("Paramètres promotionnels non chargés :",error.message)}
+}
 async function loadProducts(){
  if(db){const {data,error}=await db.from("products").select("*").eq("published",true).order("created_at",{ascending:false});if(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}else products=data||[]}
  else products=sample;
@@ -20,11 +40,11 @@ async function loadProducts(){
 function renderProducts(){
  const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,sort=$("#sort").value;
  let list=products.filter(p=>(!q||[p.name,p.brand,p.category,p.sku].join(" ").toLowerCase().includes(q))&&(!cat||p.category===cat));
- if(sort==="price-asc")list.sort((a,b)=>(a.promo_price||a.price)-(b.promo_price||b.price));
- if(sort==="price-desc")list.sort((a,b)=>(b.promo_price||b.price)-(a.promo_price||a.price));
+ if(sort==="price-asc")list.sort((a,b)=>priceInfo(a).final-priceInfo(b).final);
+ if(sort==="price-desc")list.sort((a,b)=>priceInfo(b).final-priceInfo(a).final);
  if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name,"fr"));
  $("#product-total").textContent=`${list.length} produit(s)`;
- $("#products").innerHTML=list.length?list.map(p=>`<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div>${p.promo_price?'<span class="badge-sale">OFFRE</span>':''}<div class="product-info"><div class="product-brand">${esc(p.brand||"ParaRmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(p.promo_price||p.price)} ${p.promo_price?`<span class="old-price">${money(p.price)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}" >Ajouter +</button></div></div></article>`).join(""):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+ $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div>${pi.hasProductPromo?'<span class="badge-sale">PROMO</span>':pi.rate?'<span class="badge-sale">−5%</span>':''}<div class="product-info"><div class="product-brand">${esc(p.brand||"ParaRmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.final)} ${(pi.hasProductPromo||pi.rate)?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function saveCart(){localStorage.setItem("prd-cart",JSON.stringify(cart));renderCart()}
@@ -32,8 +52,10 @@ function addCart(id){const p=products.find(x=>x.id===id);if(!p)return;const line
 function renderCart(){
  const count=cart.reduce((s,x)=>s+x.qty,0);$("#cart-count").textContent=count;
  const lines=cart.map(x=>{const p=products.find(z=>z.id===x.id)||sample.find(z=>z.id===x.id);return p?{...p,qty:x.qty}:null}).filter(Boolean);
- $("#cart-lines").innerHTML=lines.length?lines.map(p=>`<div class="cart-line"><div><b>${esc(p.name)}</b><small>${money(p.promo_price||p.price)} · ${esc(p.sku||"")}</small><div class="qty-controls"><button data-qty="${esc(p.id)}" data-delta="-1">−</button><span>${p.qty}</span><button data-qty="${esc(p.id)}" data-delta="1">+</button><button data-remove="${esc(p.id)}">Retirer</button></div></div><strong>${money((p.promo_price||p.price)*p.qty)}</strong></div>`).join(""):'<div class="empty">Votre panier est encore vide.</div>';
- $("#cart-total").textContent=money(lines.reduce((s,p)=>s+(p.promo_price||p.price)*p.qty,0));
+ const before=lines.reduce((s,p)=>s+priceInfo(p).base*p.qty,0),savings=lines.reduce((s,p)=>s+priceInfo(p).saving*p.qty,0),total=Math.max(0,before-savings);
+ $("#cart-lines").innerHTML=lines.length?lines.map(p=>{const pi=priceInfo(p);return `<div class="cart-line"><div><b>${esc(p.name)}</b><small>${money(pi.final)} ${pi.rate?`· remise ${pi.rate}% non cumulable`:pi.hasProductPromo?'· prix promotionnel':''} · ${esc(p.sku||'')}</small><div class="qty-controls" role="group" aria-label="Quantité de ${esc(p.name)}"><button class="qty-step" data-qty="${esc(p.id)}" data-delta="-1" aria-label="Diminuer la quantité" title="Diminuer">−</button><span class="qty-value" aria-live="polite">${p.qty}</span><button class="qty-step qty-plus" data-qty="${esc(p.id)}" data-delta="1" aria-label="Augmenter la quantité" title="Augmenter">+</button><button class="qty-remove" data-remove="${esc(p.id)}" aria-label="Supprimer ${esc(p.name)} du panier" title="Supprimer du panier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m3 3v7m6-7v7"/></svg></button></div></div><strong>${money(pi.final*p.qty)}</strong></div>`}).join(''):'<div class="empty">Votre panier est encore vide.</div>';
+ $("#cart-total").textContent=money(total);
+ const foot=$(".cart-foot");let summary=$("#cart-discount-summary");if(!summary&&foot){summary=document.createElement('div');summary.id='cart-discount-summary';summary.className='cart-discount-summary';foot.insertBefore(summary,foot.querySelector('.cart-total'))}if(summary)summary.innerHTML=savings>0?`<span>Sous-total</span><b>${money(before)}</b><span>Remise ParaRmi-Dist</span><b>− ${money(savings)}</b>`:'';
 }
 function drawer(open){$("#cart-drawer").classList.toggle("open",open);$("#drawer-backdrop").classList.toggle("open",open)}
 function checkoutModal(open){
@@ -41,9 +63,13 @@ function checkoutModal(open){
  if(el)el.classList.toggle("open",open);
  if(back)back.classList.toggle("open",open);
 }
-function orderWhatsApp(){
+function startWebsiteOrder(){
  if(!cart.length){toast("Votre panier est vide.");return}
  if(!db){toast("Configurez Supabase pour enregistrer les commandes.");return}
+ if(!promoConfigLoaded){toast("Les tarifs sont en cours de vérification. Réessayez dans un instant.");return}
+ const lines=cart.map(x=>{const p=products.find(z=>z.id===x.id)||sample.find(z=>z.id===x.id);return p?{...p,qty:x.qty}:null}).filter(Boolean);
+ const base=lines.reduce((s,p)=>s+priceInfo(p).base*p.qty,0),discount=lines.reduce((s,p)=>s+priceInfo(p).saving*p.qty,0),total=base-discount;
+ const summary=$("#checkout-price-summary");if(summary)summary.innerHTML=`<div><span>Sous-total</span><b>${money(base)}</b></div>${discount?`<div><span>Remise ParaRmi-Dist</span><b>− ${money(discount)}</b></div>`:''}<div class="checkout-grand-total"><span>Total à payer</span><b>${money(total)}</b></div><small>La remise générale ne se cumule pas avec un prix déjà promotionnel. Le montant définitif est recalculé par notre serveur.</small>`;
  checkoutModal(true);
 }
 async function submitOrder(){
@@ -55,10 +81,8 @@ async function submitOrder(){
   const {data,error}=await db.functions.invoke("create-order",{body:{customer,items}});
   if(error)throw error;
   const o=data.order;
-  const lines=(o.items||[]).map(i=>`• ${i.name} × ${i.quantity} — ${money(i.unit_price*i.quantity)}`).join("\\n");
-  const msg=`Merci pour votre confiance auprès de ParaRmi-Dist !\\nCommande : ${o.order_number||o.id}\\n${lines}\\nSous-total : ${money(o.subtotal)}\\nLivraison : GRATUITE (0 MAD)\\nTotal : ${money(o.total)}\\nNous vous remercions pour votre achat.`;
-  cart=[];saveCart();checkoutModal(false);drawer(false);toast("Commande enregistrée avec succès.");
-  window.open(`https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
+  cart=[];saveCart();checkoutModal(false);drawer(false);
+  toast(`Commande ${o.order_number||o.id} enregistrée. Notre équipe vous contactera.`);
  }catch(err){console.error(err);toast("Commande non enregistrée : "+(err.message||"erreur Supabase."))}
  finally{btn.disabled=false;btn.textContent="Confirmer ma commande"}
 }
@@ -103,50 +127,137 @@ function adminLogin(){
  else $("#admin-login").onclick=async()=>{const {data,error}=await db.auth.signInWithPassword({email:$("#admin-email").value,password:$("#admin-password").value});if(error){toast("Connexion refusée : "+error.message);return}const {data:profile}=await db.from("profiles").select("role").eq("id",data.user.id).single();if(profile?.role!=="admin"){await db.auth.signOut();toast("Ce compte n'a pas le rôle administrateur.");return}isAdmin=true;adminDashboard()};
 }
 
+const ADMIN_CATEGORIES=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Bébé & Maman","Bien-être"];
+const ORDER_STATUSES=["pending","confirmed","preparing","shipped","delivered","cancelled"];
+const statusLabel=s=>({pending:"En attente",confirmed:"Confirmée",preparing:"En préparation",shipped:"Expédiée",delivered:"Livrée",cancelled:"Annulée"}[s]||s||"—");
 function adminDashboard(){
- const categories=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Bébé & Maman","Bien-être"];
- const categoryOptions=categories.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
- $("#admin-content").innerHTML=`<div class="admin-panel"><p class="admin-hint">Connecté en tant qu'administrateur. Les modifications sont enregistrées dans la base de données.</p><h4>Ajouter un produit</h4><p class="admin-hint">Seuls le nom, la catégorie et le prix sont obligatoires. Les autres informations sont facultatives.</p><label for="p-name">Nom du produit *</label><input id="p-name" autocomplete="off" placeholder="Ex. Crème hydratante" required><label for="p-category">Catégorie *</label><select id="p-category" required>${categoryOptions}</select><label for="p-price">Prix de vente (MAD) *</label><input id="p-price" type="number" min="0.01" step="0.01" placeholder="Ex. 129" required><label for="p-brand">Marque (facultatif)</label><input id="p-brand" placeholder="Nom de la marque"><label for="p-sku">Référence / SKU (facultatif)</label><input id="p-sku" placeholder="Générée si laissée vide"><label for="p-promo">Prix promotionnel (facultatif)</label><input id="p-promo" type="number" min="0" step="0.01" placeholder="Laisser vide sans promotion"><label for="p-image">URL de la photo (facultatif)</label><input id="p-image" type="url" placeholder="https://…"><label for="p-desc">Description (facultatif)</label><textarea id="p-desc" placeholder="Description du produit"></textarea><button class="btn btn-dark full" id="p-save" type="button">Enregistrer le produit</button><h4>Catalogue (${products.length})</h4><div id="admin-list"></div><h4>Commandes récentes</h4><div id="admin-orders">Chargement…</div><button class="btn btn-light full" id="admin-logout">Déconnexion</button></div>`;
- $("#admin-list").innerHTML=products.map(p=>`<div class="admin-row"><span>${esc(p.name)} · ${money(p.price)}</span><button data-delete="${esc(p.id)}">Supprimer</button></div>`).join("");
- loadAdminOrders();
- $("#p-save").onclick=async()=>{
-  const name=$("#p-name").value.trim();
-  const category=$("#p-category").value;
-  const price=Number($("#p-price").value);
-  const promoRaw=$("#p-promo").value.trim();
-  const promo=promoRaw===""?null:Number(promoRaw);
-  if(!name){toast("Le nom du produit est obligatoire.");$("#p-name").focus();return}
-  if(!categories.includes(category)){toast("Choisissez une catégorie proposée.");$("#p-category").focus();return}
-  if(!Number.isFinite(price)||price<=0){toast("Saisissez un prix supérieur à 0 MAD.");$("#p-price").focus();return}
-  if(promo!==null&&(!Number.isFinite(promo)||promo<0||promo>=price)){toast("Le prix promotionnel doit être inférieur au prix normal.");$("#p-promo").focus();return}
-  const sku=$("#p-sku").value.trim()||null;
-  const p={name,category,price,brand:$("#p-brand").value.trim()||null,sku,promo_price:promo,stock:0,image_url:$("#p-image").value.trim()||null,description:$("#p-desc").value.trim()||null,published:true};
-  const btn=$("#p-save");btn.disabled=true;btn.textContent="Enregistrement…";
-  const {error}=await db.from("products").insert(p);
-  btn.disabled=false;btn.textContent="Enregistrer le produit";
-  if(error){toast("Erreur : "+error.message);return}
-  toast("Produit enregistré.");await loadProducts();adminDashboard();
- };
- $("#admin-logout").onclick=async()=>{await db.auth.signOut();isAdmin=false;adminLogin()};
+ adminTab="overview";
+ $("#admin-modal").classList.add("admin-modal-wide");
+ $("#admin-content").innerHTML=`<div class="admin-shell"><div class="admin-topline"><div><p class="eyebrow">CENTRE DE PILOTAGE</p><h3>Gestion ParaRmi-Dist</h3><p class="admin-hint">Vue centralisée de votre activité commerciale. Les données proviennent de Supabase.</p></div><button class="btn btn-light" id="admin-refresh">Actualiser</button></div><nav class="admin-tabs" aria-label="Navigation administration"><button data-admin-tab="overview" class="active">Vue générale</button><button data-admin-tab="orders">Commandes</button><button data-admin-tab="customers">Clients</button><button data-admin-tab="products">Produits</button><button data-admin-tab="promotion">Promotions</button><button data-admin-tab="reports">Rapports</button></nav><div id="admin-workspace"><div class="admin-loading">Chargement des données commerciales…</div></div><div class="admin-footer"><span>Session administrateur sécurisée</span><button class="btn btn-light" id="admin-logout">Déconnexion</button></div></div>`;
+ $("#admin-refresh").onclick=loadAdminData;
+ $("#admin-logout").onclick=async()=>{await db.auth.signOut();isAdmin=false;$("#admin-modal").classList.remove("admin-modal-wide");adminLogin()};
+ loadAdminData();
 }
-async function loadAdminOrders(){
- const target=$("#admin-orders");if(!target||!db||!isAdmin)return;
- const {data,error}=await db.from("orders").select("*").order("created_at",{ascending:false}).limit(30);
- if(error){target.textContent="Commandes indisponibles : "+error.message;return}
- target.innerHTML=data.length?data.map(o=>`<div class="admin-row"><span><b>${esc(o.customer_name)}</b><br><small>${esc(o.phone)} · ${esc(o.city)} · ${money(o.total)} · ${esc(o.status)}</small></span></div>`).join(""):"Aucune commande pour le moment.";
+async function loadAdminData(){
+ if(!db||!isAdmin)return;
+ const [ordersRes,productsRes,customersRes,promoRes]=await Promise.all([
+  db.from("orders").select("*").order("created_at",{ascending:false}).limit(2000),
+  db.from("products").select("*").order("created_at",{ascending:false}).limit(1000),
+  db.from("customers").select("*").order("last_order_at",{ascending:false}).limit(5000),
+  db.from("promotion_settings").select("*").eq("id",1).maybeSingle()
+ ]);
+ if(ordersRes.error||productsRes.error||customersRes.error){$("#admin-workspace").innerHTML=`<div class="admin-error">Impossible de charger les données : ${esc(ordersRes.error?.message||productsRes.error?.message||customersRes.error?.message||'Erreur Supabase')}. Vérifiez la migration professionnelle V6.</div>`;return}
+ adminOrders=ordersRes.data||[];adminProducts=productsRes.data||[];adminCustomers=customersRes.data||[];adminPromo=promoRes.data||null;adminPromoError=promoRes.error?.message||null;
+ if(adminPromo)promoConfig=adminPromo;
+ renderAdminTab();
 }
+function isRevenueOrder(o){return o.status==='delivered'||o.payment_status==='paid'}
+function orderDate(o){return new Date(o.created_at||Date.now())}
+function customerRows(){return adminCustomers}
+function filteredOrders(){const from=$("#report-from")?.value,to=$("#report-to")?.value;return adminOrders.filter(o=>{const d=orderDate(o);return (!from||d>=new Date(from+'T00:00:00'))&&(!to||d<=new Date(to+'T23:59:59'))})}
+function renderAdminTab(){
+ const host=$("#admin-workspace");if(!host)return;
+ document.querySelectorAll('[data-admin-tab]').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===adminTab));
+ const now=new Date(),monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+ const monthly=adminOrders.filter(o=>orderDate(o)>=monthStart),revenue=monthly.filter(isRevenueOrder).reduce((s,o)=>s+Number(o.total||0),0),customers=customerRows();
+ if(adminTab==='overview'){
+  const pending=adminOrders.filter(o=>o.status==='pending').length,delivered=adminOrders.filter(o=>o.status==='delivered').length;
+  const top=topProducts(monthly.filter(isRevenueOrder)).slice(0,5), trend=monthlyRevenueSeries();
+  host.innerHTML=`<div class="admin-kpis"><article><span>CA encaissé / livré ce mois</span><b>${money(revenue)}</b><small>Commandes livrées ou paiements confirmés</small></article><article><span>Commandes du mois</span><b>${monthly.length}</b><small>${pending} en attente · ${delivered} livrées</small></article><article><span>Clients identifiés</span><b>${customers.length}</b><small>Dédupliqués par numéro de téléphone</small></article><article><span>Catalogue publié</span><b>${adminProducts.filter(p=>p.published).length}</b><small>${adminProducts.length} produits au total</small></article></div><section class="admin-card"><div class="admin-card-head"><h4>Évolution du chiffre d’affaires</h4><small>6 derniers mois · commandes livrées ou payées</small></div><div class="admin-month-chart">${trend.map(x=>`<div class="admin-month-col"><b>${money(x.value)}</b><span class="admin-month-bar" style="height:${x.height}%"></span><small>${x.label}</small></div>`).join('')}</div></section><div class="admin-two-col"><section class="admin-card"><div class="admin-card-head"><h4>Commandes récentes</h4><button data-jump-tab="orders">Voir tout</button></div>${adminOrders.slice(0,7).map(orderRow).join('')||'<p class="admin-empty">Aucune commande enregistrée.</p>'}</section><section class="admin-card"><div class="admin-card-head"><h4>Meilleures ventes</h4><button data-jump-tab="reports">Rapports</button></div>${top.map(x=>`<div class="admin-ranking"><span>${esc(x.name)}</span><b>${x.quantity} unité(s)</b><strong>${money(x.revenue)}</strong></div>`).join('')||'<p class="admin-empty">Les ventes apparaîtront ici après les premières commandes.</p>'}</section></div><p class="admin-note">Le chiffre d'affaires est calculé sur les commandes livrées ou les paiements marqués comme payés. Les commandes annulées et en attente sont exclues. La marge bénéficiaire nécessite l'enregistrement du coût d'achat des produits.</p>`;
+ } else if(adminTab==='orders'){
+  host.innerHTML=`<div class="admin-section-head"><div><h4>Gestion des commandes</h4><p>Imprimez une commande ou transmettez son récapitulatif au client par Gmail ou WhatsApp.</p></div><input id="orders-search" placeholder="Rechercher client, téléphone, ville…"></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Commande</th><th>Client</th><th>Date</th><th>Total</th><th>Paiement</th><th>Statut</th><th>Actions</th></tr></thead><tbody id="orders-table-body">${adminOrders.map(orderTableRow).join('')||'<tr><td colspan="7">Aucune commande.</td></tr>'}</tbody></table></div>`;
+  $("#orders-search").oninput=()=>{const q=$("#orders-search").value.toLowerCase();$("#orders-table-body").innerHTML=adminOrders.filter(o=>[o.customer_name,o.phone,o.city,String(o.id)].join(' ').toLowerCase().includes(q)).map(orderTableRow).join('')};
+ } else if(adminTab==='customers'){
+  host.innerHTML=`<div class="admin-section-head"><div><h4>Fichier clients</h4><p>Fiches reconstituées à partir des commandes existantes, comptes et invités confondus.</p></div><input id="customers-search" placeholder="Rechercher un client…"></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Client</th><th>Contact</th><th>Ville</th><th>Commandes</th><th>CA livré / payé</th><th>Dernière commande</th></tr></thead><tbody id="customers-table-body">${customers.map(customerTableRow).join('')||'<tr><td colspan="6">Aucun client identifié.</td></tr>'}</tbody></table></div><p class="admin-note">Les clients invités sont identifiés par leur téléphone. Les comptes authentifiés restent dans Supabase Authentication. Aucun compte client n'est créé automatiquement par ce tableau.</p>`;
+  $("#customers-search").oninput=()=>{const q=$("#customers-search").value.toLowerCase();$("#customers-table-body").innerHTML=customers.filter(c=>[c.full_name,c.phone,c.email,c.city].join(' ').toLowerCase().includes(q)).map(customerTableRow).join('')};
+ } else if(adminTab==='products'){
+  const opts=ADMIN_CATEGORIES.map(c=>`<option>${esc(c)}</option>`).join('');
+  host.innerHTML=`<div class="admin-section-head"><div><h4>Catalogue produits</h4><p>Les colonnes existantes sont conservées. Nom, catégorie et prix sont obligatoires.</p></div><span class="admin-count">${adminProducts.length} produits</span></div><div class="admin-product-form"><label>Nom du produit<input id="p-name" placeholder="Nom du produit" required></label><label>Catégorie<select id="p-category">${opts}</select></label><label>Prix de vente (MAD)<input id="p-price" type="number" min="0.01" step="0.01" placeholder="129" required></label><label>Marque (facultatif)<input id="p-brand" placeholder="Marque"></label><label>Référence SKU (facultatif)<input id="p-sku" placeholder="Référence"></label><label>Prix promotionnel (facultatif)<input id="p-promo" type="number" min="0.01" step="0.01" placeholder="Vide si aucune promotion"></label><label>URL photo (facultatif)<input id="p-image" type="url" placeholder="https://…"></label><label class="wide">Description (facultatif)<textarea id="p-desc"></textarea></label><input id="p-id" type="hidden"><button class="btn btn-dark" id="p-save">Ajouter le produit</button><button class="btn btn-light" id="p-cancel-edit" type="button" hidden>Annuler</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Produit</th><th>Catégorie</th><th>Prix</th><th>Promotion</th><th>Publication</th><th></th></tr></thead><tbody>${adminProducts.map(p=>`<tr><td><b>${esc(p.name)}</b><small>${esc(p.sku||'Sans référence')}</small></td><td>${esc(p.category)}</td><td>${money(p.price)}</td><td>${p.promo_price?money(p.promo_price):'—'}</td><td>${p.published?'Publié':'Masqué'}</td><td><button class="admin-edit" data-edit-product="${esc(p.id)}">Modifier</button> <button class="admin-danger" data-delete="${esc(p.id)}">Supprimer</button></td></tr>`).join('')||'<tr><td colspan="6">Aucun produit.</td></tr>'}</tbody></table></div>`;
+  $("#p-save").onclick=saveAdminProduct;
+  $("#p-cancel-edit").onclick=()=>{["p-id","p-name","p-brand","p-sku","p-price","p-promo","p-image","p-desc"].forEach(id=>$("#"+id).value="");$("#p-save").textContent="Ajouter le produit";$("#p-cancel-edit").hidden=true};
+ } else if(adminTab==='promotion'){
+  const pr=adminPromo||{active:true,discount_rate:5,starts_at:null,ends_at:null};
+  host.innerHTML=`${adminPromoError?`<div class="admin-error">La table de campagne n’est pas disponible. Exécutez la migration 20261122_professional_commerce.sql dans Supabase. Détail : ${esc(adminPromoError)}</div>`:''}<div class="admin-card promotion-editor"><h4>Campagne ParaRmi-Dist</h4><p>La remise générale s'applique uniquement aux produits sans prix promotionnel. Un article déjà en promotion ne reçoit pas une deuxième réduction.</p><label class="admin-toggle"><input id="promo-active" type="checkbox" ${pr.active?'checked':''}> Campagne active</label><label>Taux de remise (%)<input id="promo-rate" type="number" min="0" max="90" step="0.5" value="${Number(pr.discount_rate||5)}"></label><div class="admin-form-grid"><label>Début de la campagne<input id="promo-start" type="datetime-local" value="${toLocalInput(pr.starts_at)}"></label><label>Fin de la campagne<input id="promo-end" type="datetime-local" value="${toLocalInput(pr.ends_at)}"></label></div><button class="btn btn-dark" id="promo-save">Enregistrer la campagne</button><p class="admin-note">Le serveur recalcule les prix et la remise au moment de la commande. Le montant envoyé par le navigateur n'est jamais considéré comme fiable.</p></div>`;
+  $("#promo-save").onclick=savePromotion;
+ } else if(adminTab==='reports'){
+  host.innerHTML=`<div class="admin-section-head"><div><h4>Rapports commerciaux</h4><p>Choisissez une période pour analyser les commandes et les ventes.</p></div><button class="btn btn-light" id="report-print">Imprimer / Enregistrer en PDF</button></div><div class="report-filters"><label>Du<input id="report-from" type="date"></label><label>Au<input id="report-to" type="date"></label><button class="btn btn-dark" id="report-apply">Appliquer</button></div><div id="report-result">${renderReportHtml(adminOrders)}</div>`;
+  $("#report-apply").onclick=()=>{$("#report-result").innerHTML=renderReportHtml(filteredOrders())};
+  $("#report-print").onclick=()=>window.print();
+ }
+}
+function toLocalInput(v){if(!v)return '';const d=new Date(v);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)}
+function monthlyRevenueSeries(){const now=new Date(),rows=[];for(let i=5;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1),next=new Date(d.getFullYear(),d.getMonth()+1,1);const value=adminOrders.filter(o=>isRevenueOrder(o)&&orderDate(o)>=d&&orderDate(o)<next).reduce((s,o)=>s+Number(o.total||0),0);rows.push({label:d.toLocaleDateString('fr-MA',{month:'short'}),value})}const max=Math.max(1,...rows.map(x=>x.value));return rows.map(x=>({...x,height:Math.max(4,Math.round(x.value/max*100))}))}
+function orderRow(o){return `<div class="admin-row"><span><b>${esc(o.customer_name||'Client')}</b><br><small>${esc(o.phone||'')} · ${esc(o.city||'')} · ${new Date(o.created_at).toLocaleDateString('fr-MA')}</small></span><strong>${money(o.total)}</strong><span class="status-pill">${esc(statusLabel(o.status))}</span></div>`}
+function orderTableRow(o){return `<tr><td><b>${esc(String(o.id).slice(0,8).toUpperCase())}</b><small>${esc(o.payment_reference||'')}</small></td><td>${esc(o.customer_name||'')}<small>${esc(o.phone||'')} · ${esc(o.city||'')}</small></td><td>${new Date(o.created_at).toLocaleDateString('fr-MA')}</td><td><b>${money(o.total)}</b><small>${Number(o.discount_amount||0)>0?`Remise ${money(o.discount_amount)}`:''}</small></td><td>${esc(o.payment_status||o.payment_method||'—')}</td><td><select data-order-status="${esc(o.id)}">${ORDER_STATUSES.map(s=>`<option value="${s}" ${o.status===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select></td><td class="order-actions"><button class="admin-edit" type="button" data-print-order="${esc(o.id)}">Imprimer</button><button class="admin-edit" type="button" data-email-order="${esc(o.id)}" ${o.email?'':'disabled title="Aucune adresse e-mail enregistrée"'}>Gmail</button><button class="admin-edit" type="button" data-whatsapp-order="${esc(o.id)}" ${o.phone?'':'disabled title="Aucun téléphone enregistré"'}>WhatsApp</button></td></tr>`}
+function orderItemsForMessage(o){
+ const items=Array.isArray(o.items)?o.items:[];
+ return items.map(i=>`• ${i.name||'Produit'} × ${Number(i.quantity||1)} : ${money(i.line_total??(Number(i.unit_price||0)*Number(i.quantity||1)))}`).join("\n")||"Détail des produits non disponible.";
+}
+function orderReference(o){return o.order_number||`PRD-${String(o.id).slice(0,8).toUpperCase()}`}
+function orderShareText(o){
+ const date=o.created_at?new Date(o.created_at).toLocaleString('fr-MA'):'—';
+ return `ParaRmi-Dist — Récapitulatif de commande\nCommande : ${orderReference(o)}\nDate : ${date}\nClient : ${o.customer_name||'Client'}\nTéléphone : ${o.phone||'—'}\nE-mail : ${o.email||'—'}\nAdresse : ${o.address||'—'}, ${o.city||''}\n\nArticles :\n${orderItemsForMessage(o)}\n\nSous-total : ${money(o.subtotal_before_discount??o.subtotal??o.total)}\nRemise : ${money(o.discount_amount||0)}\nTotal à payer : ${money(o.total)}\nPaiement : ${o.payment_method||'—'}\nÉtat : ${statusLabel(o.status)}\n\nMerci pour votre confiance.`;
+}
+function normalizedWhatsAppNumber(phone){
+ let n=String(phone||'').replace(/\D/g,'');
+ if(n.startsWith('00'))n=n.slice(2);
+ if(n.startsWith('0'))n='212'+n.slice(1);
+ if(n.length===9 && /^[5-7]/.test(n))n='212'+n;
+ return n;
+}
+function printOrder(o){
+ const w=window.open('','_blank','width=850,height=900');
+ if(!w){toast('Autorisez les fenêtres pop-up pour imprimer la commande.');return}
+ const rows=(Array.isArray(o.items)?o.items:[]).map(i=>`<tr><td>${esc(i.name||'Produit')}</td><td>${Number(i.quantity||1)}</td><td>${money(i.unit_price||0)}</td><td>${money(i.line_total??(Number(i.unit_price||0)*Number(i.quantity||1)))}</td></tr>`).join('');
+ const content=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Commande ${esc(orderReference(o))}</title><style>body{font:14px Arial,sans-serif;color:#28202a;margin:36px}h1{color:#7b173c;margin-bottom:4px}.muted{color:#766b73}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}th{background:#f8eef2}.totals{margin-left:auto;width:300px}.totals div{display:flex;justify-content:space-between;padding:6px}.grand{font-size:19px;font-weight:bold;border-top:2px solid #7b173c;margin-top:8px;padding-top:12px}.contact{margin-top:28px;white-space:pre-line}@media print{button{display:none}}</style></head><body><h1>ParaRmi-Dist</h1><div class="muted">Bon de commande</div><h2>${esc(orderReference(o))}</h2><p>Date : ${esc(o.created_at?new Date(o.created_at).toLocaleString('fr-MA'):'—')}</p><h3>Informations client</h3><p>${esc(o.customer_name||'Client')}<br>${esc(o.phone||'')}<br>${esc(o.email||'')}<br>${esc(o.address||'')} ${esc(o.city||'')}</p><h3>Articles commandés</h3><table><thead><tr><th>Produit</th><th>Qté</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="totals"><div><span>Sous-total</span><b>${money(o.subtotal_before_discount??o.subtotal??o.total)}</b></div><div><span>Remise</span><b>− ${money(o.discount_amount||0)}</b></div><div class="grand"><span>Total à payer</span><span>${money(o.total)}</span></div></div><p class="contact">Paiement : ${esc(o.payment_method||'—')}<br>Statut : ${esc(statusLabel(o.status))}<br>Notes : ${esc(o.notes||'—')}</p><p class="muted">Merci pour votre confiance.</p><script>window.onload=()=>window.print()<\/script></body></html>`;
+ w.document.open();w.document.write(content);w.document.close();
+}
+function customerTableRow(c){return `<tr><td><b>${esc(c.full_name||'Client')}</b></td><td>${esc(c.phone||'')}<small>${esc(c.email||'')}</small></td><td>${esc(c.city||'')}</td><td>${Number(c.order_count||0)}</td><td><b>${money(c.total_spent)}</b></td><td>${c.last_order_at?new Date(c.last_order_at).toLocaleDateString('fr-MA'):'—'}</td></tr>`}
+function topProducts(orders){const map=new Map();orders.forEach(o=>(Array.isArray(o.items)?o.items:[]).forEach(i=>{const k=i.product_id||i.name;const x=map.get(k)||{name:i.name||'Produit',quantity:0,revenue:0};x.quantity+=Number(i.quantity||0);x.revenue+=Number(i.line_total??(Number(i.unit_price||0)*Number(i.quantity||0)));map.set(k,x)}));return [...map.values()].sort((a,b)=>b.quantity-a.quantity)}
+function renderReportHtml(orders){const paid=orders.filter(isRevenueOrder),revenue=paid.reduce((s,o)=>s+Number(o.total||0),0),discount=orders.reduce((s,o)=>s+Number(o.discount_amount||0),0),avg=paid.length?revenue/paid.length:0;return `<div class="admin-kpis"><article><span>CA livré / payé</span><b>${money(revenue)}</b></article><article><span>Commandes</span><b>${orders.length}</b></article><article><span>Panier moyen encaissé</span><b>${money(avg)}</b></article><article><span>Remises accordées</span><b>${money(discount)}</b></article></div><div class="admin-card"><h4>Produits les plus vendus</h4>${topProducts(orders.filter(isRevenueOrder)).slice(0,15).map(x=>`<div class="admin-ranking"><span>${esc(x.name)}</span><b>${x.quantity} unité(s)</b><strong>${money(x.revenue)}</strong></div>`).join('')||'<p class="admin-empty">Aucune vente sur cette période.</p>'}</div><p class="admin-note">Le chiffre d'affaires est fondé sur les commandes livrées ou payées. Les montants historiques antérieurs à la nouvelle migration ne contiendront pas de champ de remise séparé. La marge nette n'est pas calculée car les coûts d'achat ne sont pas encore enregistrés.</p>`}
+async function saveAdminProduct(){
+ const name=$("#p-name").value.trim(),category=$("#p-category").value,price=Number($("#p-price").value),promoRaw=$("#p-promo").value.trim(),promo=promoRaw===''?null:Number(promoRaw);
+ if(!name||!ADMIN_CATEGORIES.includes(category)||!Number.isFinite(price)||price<=0){toast('Nom, catégorie et prix valide sont obligatoires.');return}
+ if(promo!==null&&(!Number.isFinite(promo)||promo<=0||promo>=price)){toast('Le prix promotionnel doit être supérieur à 0 et inférieur au prix normal.');return}
+ const productId=$("#p-id").value;
+ const existing=productId?adminProducts.find(x=>String(x.id)===productId):null;
+ const payload={name,category,price,brand:$("#p-brand").value.trim()||null,sku:$("#p-sku").value.trim()||null,promo_price:promo,image_url:$("#p-image").value.trim()||null,description:$("#p-desc").value.trim()||null,published:existing?existing.published:true};
+ const result=productId?await db.from('products').update(payload).eq('id',productId):await db.from('products').insert(payload);
+ if(result.error){toast('Erreur : '+result.error.message);return}toast(productId?'Produit modifié.':'Produit ajouté.');await loadProducts();await loadAdminData();adminTab='products';renderAdminTab();
+}
+async function savePromotion(){
+ const rate=Number($("#promo-rate").value),active=$("#promo-active").checked,start=$("#promo-start").value||null,end=$("#promo-end").value||null;
+ if(!Number.isFinite(rate)||rate<0||rate>90){toast('Le taux doit être compris entre 0 et 90 %.');return}
+ if(start&&end&&new Date(end)<=new Date(start)){toast('La date de fin doit être après la date de début.');return}
+ const payload={active,discount_rate:rate,starts_at:start?new Date(start).toISOString():null,ends_at:end?new Date(end).toISOString():null,updated_at:new Date().toISOString()};
+ const {error}=await db.from('promotion_settings').upsert({id:1,...payload});if(error){toast('Impossible d’enregistrer la campagne : '+error.message);return}
+ toast('Campagne enregistrée.');await loadPromoConfig();await loadAdminData();adminTab='promotion';renderAdminTab();renderCart();renderProducts();
+}
+document.addEventListener('change',async e=>{
+ const status=e.target.closest('[data-order-status]');
+ if(status&&db&&isAdmin){const {error}=await db.from('orders').update({status:status.value}).eq('id',status.dataset.orderStatus);if(error){toast('Statut non modifié : '+error.message);await loadAdminData()}else{const order=adminOrders.find(x=>String(x.id)===status.dataset.orderStatus);if(order)order.status=status.value;toast('Statut de commande mis à jour.');renderAdminTab()}}
+});
 document.addEventListener("click",async e=>{
  if(e.target.closest("#place-order")){await submitOrder();return}
+ const printBtn=e.target.closest('[data-print-order]');
+ if(printBtn){const order=adminOrders.find(o=>String(o.id)===printBtn.dataset.printOrder);if(order)printOrder(order);return}
+ const emailBtn=e.target.closest('[data-email-order]');
+ if(emailBtn){const order=adminOrders.find(o=>String(o.id)===emailBtn.dataset.emailOrder);if(order){if(!order.email){toast("Aucune adresse e-mail n'est enregistrée pour ce client.");return}const subject=encodeURIComponent(`ParaRmi-Dist — commande ${orderReference(order)}`);const body=encodeURIComponent(orderShareText(order));window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(order.email)}&su=${subject}&body=${body}`,'_blank','noopener')}return}
+ const whatsappBtn=e.target.closest('[data-whatsapp-order]');
+ if(whatsappBtn){const order=adminOrders.find(o=>String(o.id)===whatsappBtn.dataset.whatsappOrder);if(order){const phone=normalizedWhatsAppNumber(order.phone);if(!phone){toast("Aucun numéro de téléphone valide n'est enregistré.");return}window.open(`https://wa.me/${phone}?text=${encodeURIComponent(orderShareText(order))}`,'_blank','noopener')}return}
+ const tab=e.target.closest('[data-admin-tab]');if(tab){adminTab=tab.dataset.adminTab;renderAdminTab();return}
+ const jump=e.target.closest('[data-jump-tab]');if(jump){adminTab=jump.dataset.jumpTab;renderAdminTab();return}
  if(e.target.closest("#checkout-close")||e.target.id==="checkout-backdrop")checkoutModal(false);
  const add=e.target.closest("[data-add]");if(add)addCart(add.dataset.add);
  const qty=e.target.closest("[data-qty]");if(qty){const l=cart.find(x=>x.id===qty.dataset.qty);if(l){l.qty+=Number(qty.dataset.delta);if(l.qty<=0)cart=cart.filter(x=>x.id!==l.id);saveCart()}}
  const rem=e.target.closest("[data-remove]");if(rem){cart=cart.filter(x=>x.id!==rem.dataset.remove);saveCart()}
- const del=e.target.closest("[data-delete]");if(del&&db&&isAdmin){if(confirm("Supprimer ce produit ?")){const {error}=await db.from("products").delete().eq("id",del.dataset.delete);if(error)toast(error.message);else{await loadProducts();adminDashboard();toast("Produit supprimé.")}}}
+ const edit=e.target.closest('[data-edit-product]');if(edit&&db&&isAdmin){const product=adminProducts.find(x=>String(x.id)===edit.dataset.editProduct);if(product){adminTab='products';renderAdminTab();$("#p-id").value=product.id;$("#p-name").value=product.name||'';$("#p-category").value=product.category||ADMIN_CATEGORIES[0];$("#p-price").value=product.price??'';$("#p-brand").value=product.brand||'';$("#p-sku").value=product.sku||'';$("#p-promo").value=product.promo_price??'';$("#p-image").value=product.image_url||'';$("#p-desc").value=product.description||'';$("#p-save").textContent='Enregistrer les modifications';$("#p-cancel-edit").hidden=false;$("#p-name").focus()}return}
+ const del=e.target.closest("[data-delete]");if(del&&db&&isAdmin){if(confirm("Supprimer ce produit ?")){const {error}=await db.from("products").delete().eq("id",del.dataset.delete);if(error)toast(error.message);else{await loadProducts();await loadAdminData();adminTab="products";renderAdminTab();toast("Produit supprimé.")}}}
  const cat=e.target.closest("[data-category]");if(cat){$("#category-filter").value=cat.dataset.category;renderProducts();$("#boutique").scrollIntoView()}
 });
 $("#search").addEventListener("input",renderProducts);$("#category-filter").addEventListener("change",renderProducts);$("#sort").addEventListener("change",renderProducts);
 $("#cart-open").onclick=()=>drawer(true);$("#account-open").onclick=async()=>{await refreshAuth();$("#account-modal").classList.add("open");$("#account-backdrop").classList.add("open");accountPanel()};$("#account-backdrop").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#account-close").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#drawer-backdrop").onclick=()=>drawer(false);document.querySelectorAll("[data-close]").forEach(x=>x.onclick=()=>drawer(false));
-$("#checkout").onclick=orderWhatsApp;$("#admin-open").onclick=()=>{modal(true);adminLogin()};$("#modal-backdrop").onclick=()=>modal(false);document.querySelectorAll("[data-modal-close]").forEach(x=>x.onclick=()=>modal(false));
+$("#checkout").onclick=startWebsiteOrder;$("#admin-open").onclick=()=>{modal(true);adminLogin()};$("#modal-backdrop").onclick=()=>modal(false);document.querySelectorAll("[data-modal-close]").forEach(x=>x.onclick=()=>modal(false));
 $("#menu-toggle").onclick=()=>$("#main-nav").classList.toggle("show");document.querySelectorAll("#main-nav a").forEach(a=>a.onclick=()=>$("#main-nav").classList.remove("show"));
-$("#year").textContent=new Date().getFullYear();loadProducts();renderCart();refreshAuth();if(db)db.auth.onAuthStateChange(()=>refreshAuth());
+$("#year").textContent=new Date().getFullYear();loadProducts();renderCart();refreshAuth();if(db){loadPromoConfig().then(()=>{renderProducts();renderCart()});db.auth.onAuthStateChange(()=>refreshAuth())}
 if(!configured())console.info("Mode aperçu local actif. Consultez README.md pour connecter Supabase.");

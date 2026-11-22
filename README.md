@@ -1,97 +1,68 @@
-# ParaRmi-Dist — boutique en ligne
+# ParaRmi-Dist — version professionnelle V6
 
-Ce projet est un **socle de boutique prêt à configurer**, avec interface responsive, catalogue, recherche/filtres, panier local et commande WhatsApp préremplie. Il inclut le schéma SQL Supabase pour la base de données et l'authentification administrateur.
+Boutique web ParaRmi-Dist (Netlify) connectée à Supabase. Cette version est construite à partir de la dernière archive V5 et conserve les tables et commandes existantes.
 
-## Aperçu immédiat
-1. Décompressez le ZIP.
-2. Ouvrez `index.html` dans un navigateur.
-3. Sans configuration, le site affiche quatre produits d'exemple. Le panier et la commande WhatsApp sont utilisables en mode aperçu. Les produits d'exemple ne sont pas des produits réellement vendus par ParaRmi-Dist.
+## Nouveautés V6
+- Remise générale de 5 % calculée côté serveur, non cumulable avec `promo_price`.
+- Paramètres de campagne modifiables par l'administrateur (activation, taux, dates).
+- Panier et récapitulatif de commande affichant sous-total, remise et total estimatif.
+- Tableau de bord : chiffre d'affaires livré/payé, commandes, clients identifiés et produits publiés.
+- Gestion des commandes avec recherche et mise à jour du statut.
+- Fichier clients CRM dans `public.customers`, importé depuis les commandes historiques et synchronisé avec les nouvelles commandes (téléphone comme clé de regroupement, y compris les invités).
+- Gestion catalogue : ajout, modification et suppression de produits.
+- Rapports par période, meilleurs produits vendus et impression/enregistrement PDF.
+- Bannière promotionnelle simplifiée sans photo ni appel à rejoindre WhatsApp ; le bouton WhatsApp flottant reste un accès « Plus d’informations ».
+- Ajustements responsive pour limiter les textes qui débordent.
 
-## Connecter une base de données et activer l'administration
-1. Créez un projet gratuit sur https://supabase.com/.
-2. Dans le SQL Editor, exécutez `supabase/schema.sql`.
-3. Dans Authentication > Users, créez votre compte administrateur.
-4. Récupérez l'UUID de ce compte puis exécutez la dernière instruction commentée du fichier SQL en remplaçant `UUID_DE_VOTRE_UTILISATEUR`.
-5. Dans Project Settings > API, copiez Project URL et anon/public key.
-6. Ouvrez `app.js` et renseignez `supabaseUrl` et `supabaseAnonKey` dans `CONFIG`.
-7. Hébergez les fichiers sur un hébergeur statique (par exemple Netlify ou Vercel, offres gratuites sous conditions). Le site n'est pas publié automatiquement par ce ZIP.
+## Ce qui n'est PAS changé
+- Aucune table existante n'est supprimée ou recréée.
+- Les commandes, profils, utilisateurs et produits existants ne sont pas effacés.
+- Les rôles existants restent `admin` et `customer`.
+- Le paiement CMI demeure une préparation technique non activée tant que le contrat marchand et la documentation officielle ne sont pas disponibles.
 
-## Administration actuelle
-Après configuration Supabase et attribution du rôle `admin`, l'icône ♙ ouvre une connexion administrateur. L'admin peut ajouter et supprimer des produits. Le catalogue public lit les produits publiés dans Supabase. Pour l'instant, l'interface ne comprend pas encore l'édition complète, les commandes administrables avancées, les variantes, les rôles multiples ou les statistiques.
+## Installation obligatoire
+1. Sauvegardez votre projet Supabase et gardez le déploiement Netlify précédent disponible comme retour arrière.
+2. Dans Supabase SQL Editor, exécutez uniquement `supabase/migrations/20261122_professional_commerce.sql` pour cette mise à jour V6. Les migrations historiques V5 ne doivent pas être rejouées sur une base déjà à jour.
+3. Redéployez la fonction `create-order` mise à jour : `supabase functions deploy create-order`.
+4. Vérifiez que les secrets Edge Functions `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont configurés. Ne les placez jamais dans `app.js`.
+5. Déployez le dossier `pararmidist-shop` sur Netlify (celui qui contient directement `index.html`, `app.js`, `styles.css` et `assets/`).
+6. Connectez-vous à l'administration avec le compte qui possède déjà le rôle `admin` dans `public.profiles`.
+7. Ouvrez l'onglet Promotions et vérifiez la période de campagne avant d'accepter les commandes.
 
-## Points à finaliser avant une vraie ouverture commerciale
-- Ajouter un formulaire de commande serveur (Edge Function), validation de stock et de prix côté serveur, anti-spam et stockage des commandes. Le bouton actuel prépare une commande WhatsApp; il ne crée pas de commande dans la base.
-- Configurer les tarifs et délais de livraison par zone : aucune valeur n'est inventée ici.
-- Ajouter les pages légales adaptées au Maroc (CGV, confidentialité, retours) et faire vérifier leur conformité.
-- Ajouter les galeries et variantes, l'édition produit, la gestion des commandes, les sauvegardes et les journaux.
-- Vérifier les droits d'utilisation des photos officielles des fabricants. Les images d'exemple ne sont pas incluses.
-- Ajouter un domaine personnalisé si souhaité (un domaine est généralement payant).
-- Ne jamais mettre la clé `service_role` Supabase dans le navigateur. Seule la clé `anon/public` est utilisée ici; les règles RLS protègent les tables.
+## Règle de remise
+- Un produit sans prix promotionnel reçoit le taux général configuré (5 % par défaut).
+- Un produit avec `promo_price` utilise ce prix et ne reçoit PAS une remise supplémentaire.
+- Le navigateur affiche une estimation ; l'Edge Function recharge les prix depuis Supabase et recalcule la remise avant l'insertion de la commande.
+- Les commandes enregistrent `subtotal_before_discount`, `discount_amount`, `discount_rate`, `subtotal`, `total` et le détail des lignes dans `items`.
 
-## Coordonnées configurées
-ParaRmi-Dist · 2, rue Essanawbar (ex-Preignac), 20500 Casablanca, Maroc  
-Téléphone / WhatsApp : +212 660-622369  
-E-mail : pararmidist@gmail.com  
-Devise : MAD
+## Où sont stockées les données ?
+- `public.orders` : commandes, coordonnées fournies au checkout, lignes de produits, quantités, totaux, remises, statut et moyen de paiement.
+- `auth.users` : comptes d'authentification des clients inscrits.
+- `public.profiles` : profil et rôle (`admin` ou `customer`).
+- `public.customers` : fichier client CRM, regroupé par téléphone normalisé ; la migration importe les clients déjà présents dans `orders` et un trigger synchronise les nouvelles commandes et changements de statut.
+- `public.products` : catalogue.
+- `public.promotion_settings` : paramètres de la campagne 5 %.
 
-## Gratuité
-Le code est fourni sans frais. Les offres gratuites de services tiers ont des limites, peuvent changer et ne garantissent pas une exploitation commerciale illimitée. Nom de domaine, e-mail professionnel, services de livraison, publicité et certains paiements peuvent engendrer des coûts.
+Les clients invités sont également enregistrés dans `public.customers` à partir des coordonnées de commande. Leurs informations reflètent ce qu'ils ont communiqué au moment de commander ; les comptes inscrits restent dans `auth.users` et `profiles`.
 
+## Limites à connaître
+- Le tableau de bord charge jusqu'à 2 000 commandes récentes, 5 000 clients et 1 000 produits ; pour une activité à très gros volume, il faudra ajouter pagination et agrégations serveur.
+- Les coûts d'achat ne sont pas stockés dans `products` : la marge nette et la rentabilité réelle ne peuvent donc pas être calculées honnêtement à ce stade.
+- Les rapports peuvent être imprimés ou enregistrés en PDF via le navigateur ; aucun export Excel n'est inclus dans cette version.
+- Les clients invités ne disposent pas d'un espace historique personnel tant qu'ils ne créent pas de compte. Leurs commandes restent visibles dans l'administration.
+- Les données historiques ne sont pas réécrites pour inventer des remises passées : les nouveaux champs de remise des anciennes commandes sont initialisés à zéro.
 
-## Version 2 — commandes enregistrées
-Cette version ajoute un formulaire de commande, l'enregistrement par Edge Function `create-order`,
-la livraison gratuite (0 MAD) et l'affichage des commandes récentes dans l'espace administrateur.
-La fonction serveur vérifie les produits publiés, les prix provenant de Supabase et le stock disponible.
+## Test après installation
+- Ajouter une commande avec un produit normal : vérifier la remise de 5 %.
+- Ajouter un produit avec prix promotionnel : vérifier qu'il ne reçoit pas les 5 % supplémentaires.
+- Commander un panier mixte : vérifier que seule la ligne sans promotion reçoit la remise générale.
+- Vérifier la ligne dans `public.orders` : sous-total, remise et total.
+- Modifier un statut de commande depuis l'administration.
+- Vérifier que le client apparaît dans l'onglet Clients après une commande.
+- Imprimer un rapport PDF.
 
-### Activation Supabase
-1. Vérifiez d'abord que l'URL et la clé publique dans `app.js` correspondent à votre projet.
-2. Dans Supabase SQL Editor, exécutez `supabase/migrations/20261118_orders_admin.sql`.
-3. Déployez la fonction : `supabase functions deploy create-order`.
-4. Vérifiez que les secrets standards `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` sont configurés côté Edge Functions. Ne placez jamais la clé service role dans `app.js`.
-5. Testez une commande avec un produit réel et une adresse e-mail client.
-
-### Limites actuelles à connaître
-- L'e-mail de facture PDF n'est pas encore envoyé automatiquement : il faut connecter un fournisseur d'e-mail transactionnel et configurer ses secrets.
-- WhatsApp s'ouvre avec le récapitulatif prérempli ; l'envoi automatique exige l'API WhatsApp Business.
-- Cette première version vérifie le stock mais ne le décrémente pas et ne réserve pas les unités. Confirmez les commandes et gérez le stock depuis l'administration avant expédition.
-- La création de la commande est active seulement après déploiement de l'Edge Function et exécution de la migration SQL.
-
-
-## Version 2 — identité visuelle rose & bordeaux
-
-Cette version actualise la présentation du site selon les maquettes ParaRmi-Dist fournies :
-- palette rose, bordeaux, blanc et doré ;
-- en-tête, navigation, bannière d'accueil et catégories remaniés ;
-- cartes produits, espace contact et bouton WhatsApp restylés ;
-- adaptation mobile conservée.
-
-Les paramètres d'intégration et les fichiers de fonctionnement ont été conservés : `app.js`, schéma SQL, migration et Edge Function `create-order` n'ont pas été modifiés. Les images du logo et de la bannière ont été ajoutées dans `assets/`.
+Coordonnées : ParaRmi-Dist · Casablanca, Maroc · +212 660-622369 · pararmidist@gmail.com · devise MAD.
 
 
-## Version 5 — compte client et panier
-- Ajout d'une icone Compte client et d'un espace inscription/connexion.
-- Un client connecté peut consulter uniquement les commandes liées à son compte.
-- Le passage de commande reste possible en mode invité; si le client est connecté, la commande est associée à son compte.
-- Le panier reste local au navigateur.
-- Le suivi d'historique nécessite la migration `supabase/migrations/20261119_customer_accounts.sql` et le redéploiement de `create-order`.
-
-### Installation V5
-1. Sauvegardez votre projet Supabase.
-2. Exécutez `supabase/migrations/20261119_customer_accounts.sql` dans SQL Editor.
-3. Vérifiez dans Edge Function Secrets que `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` et une clé publique (`SUPABASE_ANON_KEY` ou `SUPABASE_PUBLISHABLE_KEY`) sont disponibles.
-4. Redéployez `create-order` avec `supabase functions deploy create-order`.
-5. Redéployez le dossier du site sur Netlify.
-6. Testez avec un compte client de test et une commande de faible montant.
-
-### Gestion sans stock
-Le catalogue et la fonction de commande ne bloquent plus l'achat selon la colonne stock. Le champ stock est conservé dans la base pour une activation ultérieure, mais n'est pas utilisé pour limiter les commandes dans cette version. Vérifiez votre capacité réelle à fournir chaque produit avant de confirmer une commande.
-
-
-## Mise à jour — formulaire produit simplifié
-L’import CSV et le modèle CSV ont été retirés de l’interface et du paquet du site. Le formulaire d’administration demande uniquement le nom, la catégorie prédéfinie et le prix. Les autres champs sont facultatifs. Les anciennes colonnes SQL de prix concurrents sont conservées sans être utilisées, afin de préserver les données existantes.
-
-
-## Préparation du paiement CMI — état non activé
-Consultez `CMI-ET-INSTALLATION.md` avant toute opération Supabase.
-La migration `supabase/migrations/20261121_cmi_payment_preparation.sql` ajoute les champs de suivi des paiements.
-La fonction `cmi-create-payment` est un verrou temporaire qui refuse toute transaction tant que la documentation officielle et les accès marchands ne sont pas fournis. Le paiement CMI réel n'est pas encore disponible dans cette archive.
+## Impression et partage des commandes
+Dans Administration > Commandes, les actions Imprimer, Gmail et WhatsApp produisent un bon de commande ou un message prérempli à partir des données de la commande. L'administrateur valide lui-même l'impression ou l'envoi. Aucun ajout SQL n'est requis.
