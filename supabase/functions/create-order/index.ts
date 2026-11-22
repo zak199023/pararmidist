@@ -5,7 +5,6 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -22,10 +21,10 @@ Deno.serve(async (req) => {
       const { data: authData } = await admin.auth.getUser(token);
       customerUserId = authData.user?.id ?? null;
     }
-
     const body = await req.json();
     const c = body.customer ?? {};
     const rawItems = body.items ?? [];
+
     if (!c.customer_name?.trim() || !c.phone?.trim() || !c.city?.trim() || !c.address?.trim())
       return Response.json({ error: "Nom, téléphone, ville et adresse sont obligatoires." }, { status: 400, headers: cors });
     if (!Array.isArray(rawItems) || rawItems.length < 1 || rawItems.length > 40)
@@ -42,74 +41,29 @@ Deno.serve(async (req) => {
 
     const ids = [...quantities.keys()];
     const { data: products, error: productError } = await admin
-      .from("products").select("id,name,sku,price,promo_price,published").in("id", ids);
+      .from("products").select("id,name,sku,price,promo_price,stock,published").in("id", ids);
     if (productError) throw productError;
     if (!products || products.length !== ids.length)
       return Response.json({ error: "Un produit du panier est introuvable." }, { status: 400, headers: cors });
 
-    const { data: campaign, error: campaignError } = await admin
-      .from("promotion_settings").select("active,discount_rate,starts_at,ends_at").eq("id", 1).maybeSingle();
-    if (campaignError) throw campaignError;
-    const now = Date.now();
-    const campaignActive = !!campaign?.active
-      && (!campaign.starts_at || now >= new Date(campaign.starts_at).getTime())
-      && (!campaign.ends_at || now <= new Date(campaign.ends_at).getTime());
-    const configuredRate = campaignActive ? Number(campaign.discount_rate || 0) : 0;
-
-    let subtotalBeforeDiscount = 0;
-    let discountAmount = 0;
-    let discountedLines = 0;
+    let subtotal = 0;
     const items = [];
     for (const p of products) {
       const quantity = quantities.get(p.id)!;
       if (!p.published) return Response.json({ error: `Produit indisponible : ${p.name}` }, { status: 400, headers: cors });
-      const hasProductPromotion = p.promo_price !== null && p.promo_price !== undefined && Number(p.promo_price) >= 0;
-      const baseUnitPrice = Number(hasProductPromotion ? p.promo_price : p.price);
-      const lineRate = hasProductPromotion ? 0 : configuredRate;
-      const unitDiscount = round2(baseUnitPrice * lineRate / 100);
-      const unitPrice = round2(baseUnitPrice - unitDiscount);
-      const lineDiscount = round2(unitDiscount * quantity);
-      const lineTotal = round2(unitPrice * quantity);
-      subtotalBeforeDiscount += round2(baseUnitPrice * quantity);
-      discountAmount += lineDiscount;
-      if (lineRate > 0) discountedLines++;
-      items.push({
-        product_id: p.id,
-        name: p.name,
-        sku: p.sku,
-        quantity,
-        base_unit_price: baseUnitPrice,
-        unit_price: unitPrice,
-        discount_rate: lineRate,
-        line_discount: lineDiscount,
-        line_total: lineTotal,
-        product_promotion_applied: hasProductPromotion,
-      });
+      
+      const unit_price = Number(p.promo_price ?? p.price);
+      subtotal += unit_price * quantity;
+      items.push({ product_id: p.id, name: p.name, sku: p.sku, quantity, unit_price });
     }
 
-    subtotalBeforeDiscount = round2(subtotalBeforeDiscount);
-    discountAmount = round2(discountAmount);
-    const shippingFee = 0;
-    const total = round2(Math.max(0, subtotalBeforeDiscount - discountAmount + shippingFee));
-    const appliedRate = discountedLines > 0 ? configuredRate : 0;
     const orderNumber = `PRD-${Date.now()}`;
     const order = {
-      user_id: customerUserId,
-      customer_name: c.customer_name.trim(),
-      phone: c.phone.trim(),
-      email: c.email?.trim() || null,
-      city: c.city.trim(),
-      address: c.address.trim(),
-      notes: c.notes?.trim() || null,
-      items,
-      subtotal: subtotalBeforeDiscount,
-      subtotal_before_discount: subtotalBeforeDiscount,
-      discount_amount: discountAmount,
-      discount_rate: appliedRate,
-      shipping_fee: shippingFee,
-      total,
-      payment_method: "cash_on_delivery",
-      status: "pending",
+      user_id: customerUserId, customer_name: c.customer_name.trim(), phone: c.phone.trim(),
+      email: c.email?.trim() || null, city: c.city.trim(), address: c.address.trim(),
+      notes: c.notes?.trim() || null, items, subtotal,
+      shipping_fee: 0, total: subtotal, payment_method: "cash_on_delivery",
+      status: "pending"
     };
     const { data: saved, error: insertError } = await admin.from("orders").insert(order).select("*").single();
     if (insertError) throw insertError;
