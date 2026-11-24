@@ -57,3 +57,12 @@ Repository: https://github.com/zak199023/pararmidist
 - Le numéro WhatsApp est configuré en format international `212660622369`, correspondant au numéro local fourni `06 60 62 23 69`. Le numéro visible sur le site est harmonisé au format local ; le lien WhatsApp conserve le format international requis.
 - Vérification après commit : aucun contrôle `p.stock`, aucune mise à jour de stock dans la fonction de commande, et aucune ouverture WhatsApp automatique après confirmation.
 - Ces changements sont sur la branche de préparation uniquement. La fonction Edge doit être redéployée et le site publié pour être visibles en production ; rien n'a été déployé ici.
+
+
+## Demande complémentaire — vente directe et téléphone (24 novembre 2026)
+- Le flux Edge `create-order` ne sélectionne pas la colonne `stock`, ne vérifie pas les quantités disponibles et ne décrémente pas le stock : les commandes sont traitées sans blocage lié au stock.
+- Le formulaire d'administration conserve une valeur technique `stock: 0` lors de la création d'un produit parce que la colonne existe dans la base actuelle, mais cette valeur n'est pas utilisée pour autoriser ou refuser les ventes.
+- Le numéro affiché sur la page contact est maintenant `0660622369`.
+- Le lien WhatsApp utilise `212660622369`, qui est le format international du même numéro marocain (06… devient +212 6…). Le lien flottant WhatsApp et la configuration applicative pointent donc vers le numéro demandé.
+- Vérification des fichiers après commit : numéro affiché correct, lien WhatsApp au format international correct, aucun contrôle ni décrément de stock dans la fonction de commande.
+- Ces changements restent sur `audit/v7-integration`; aucun déploiement ni changement Supabase n'a été effectué.
