@@ -57,7 +57,8 @@ Deno.serve(async (req) => {
       items.push({ product_id: p.id, name: p.name, sku: p.sku, quantity, unit_price });
     }
 
-    const orderNumber = `PRD-${Date.now()}`;
+    // Le numéro est persisté dans orders.order_number (pas seulement renvoyé au navigateur).
+    const orderNumber = `PRD-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
     const order = {
       user_id: customerUserId, customer_name: c.customer_name.trim(), phone: c.phone.trim(),
       email: c.email?.trim() || null, city: c.city.trim(), address: c.address.trim(),
@@ -67,7 +68,7 @@ Deno.serve(async (req) => {
     };
     const { data: saved, error: insertError } = await admin.from("orders").insert(order).select("*").single();
     if (insertError) throw insertError;
-    return Response.json({ order: { ...saved, order_number: orderNumber } }, { status: 200, headers: cors });
+    return Response.json({ order: saved }, { status: 200, headers: cors });
   } catch (err) {
     console.error(err);
     return Response.json({ error: "Impossible d'enregistrer la commande." }, { status: 500, headers: cors });
