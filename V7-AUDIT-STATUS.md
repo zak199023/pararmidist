@@ -49,3 +49,11 @@ Repository: https://github.com/zak199023/pararmidist
 - La fonction Edge modifiée doit être redéployée dans Supabase avant que le site puisse en bénéficier. Ce redéploiement n'a pas été fait.
 - La branche de préparation contient toujours le code storefront historique du dépôt ; la version ZIP V7 complète n'a pas encore été fusionnée dans cette branche. Les fonctions CSV et les autres fonctionnalités présentes uniquement dans le ZIP doivent donc être réintégrées et retestées avant de produire un paquet final.
 - Aucun changement n'a été appliqué à Supabase ou à Netlify.
+
+
+## Vente directe et coordonnées WhatsApp (24 novembre 2026)
+- Suppression du contrôle de quantité disponible dans `create-order` : les commandes ne sont plus refusées selon la valeur de `products.stock`.
+- La fonction de commande ne modifie pas le stock ; les ventes sont indépendantes de cette colonne.
+- Le numéro WhatsApp est configuré en format international `212660622369`, correspondant au numéro local fourni `06 60 62 23 69`. Le numéro visible sur le site est harmonisé au format local ; le lien WhatsApp conserve le format international requis.
+- Vérification après commit : aucun contrôle `p.stock`, aucune mise à jour de stock dans la fonction de commande, et aucune ouverture WhatsApp automatique après confirmation.
+- Ces changements sont sur la branche de préparation uniquement. La fonction Edge doit être redéployée et le site publié pour être visibles en production ; rien n'a été déployé ici.
