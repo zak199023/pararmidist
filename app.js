@@ -1,4 +1,5 @@
 /* ParaRmi-Dist storefront. Configure Supabase in this file before launch. */
+// WhatsApp : 0660622369 au format international requis par wa.me (+212660622369).
 const CONFIG = { supabaseUrl: "https://hzosrdvaajjfenbzjxhg.supabase.co", supabaseAnonKey: "sb_publishable_AF7DhI63sGlRQXtnGZ3l-w_9EBLu1yQ", whatsapp: "212660622369" };
 const money = n => new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(Number(n||0));
 const $ = s => document.querySelector(s);
