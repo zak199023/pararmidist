@@ -36,3 +36,16 @@ Repository: https://github.com/zak199023/pararmidist
 4. Make the 38% label conditional on the actual price calculation and confirm the exact 5% campaign behavior.
 5. Keep order success feedback tied to a confirmed server response; add external notifications only with configured provider credentials.
 6. Run SQL/RLS, order, CSV, responsive UI, and deployment tests before merging or deploying.
+
+
+## Correctifs de préparation ajoutés sur la branche (24 novembre 2026)
+- Le flux de commande n'ouvre plus automatiquement WhatsApp après l'enregistrement : il affiche uniquement une notification de succès avec le numéro de commande et indique que l'équipe recontactera le client.
+- La fonction `create-order` vérifie désormais la quantité disponible avant d'accepter chaque ligne de commande.
+- La fonction enregistre explicitement `payment_status = 'unpaid'` et le numéro `order_number` dans la ligne `orders`.
+- Vérification après commit : les trois changements sont présents dans la fonction Edge et l'ouverture automatique WhatsApp a disparu de `app.js`.
+
+## Limites à résoudre avant mise en production
+- Le contrôle de stock est une vérification préalable, pas encore une réservation atomique : deux commandes simultanées pourraient encore accepter le même dernier article. Il faudra une fonction SQL transactionnelle/RPC et un test de concurrence avant activation.
+- La fonction Edge modifiée doit être redéployée dans Supabase avant que le site puisse en bénéficier. Ce redéploiement n'a pas été fait.
+- La branche de préparation contient toujours le code storefront historique du dépôt ; la version ZIP V7 complète n'a pas encore été fusionnée dans cette branche. Les fonctions CSV et les autres fonctionnalités présentes uniquement dans le ZIP doivent donc être réintégrées et retestées avant de produire un paquet final.
+- Aucun changement n'a été appliqué à Supabase ou à Netlify.
