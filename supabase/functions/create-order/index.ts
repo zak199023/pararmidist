@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
 
     const ids = [...quantities.keys()];
     const { data: products, error: productError } = await admin
-      .from("products").select("id,name,sku,price,promo_price,stock,published").in("id", ids);
+      .from("products").select("id,name,sku,price,promo_price,published").in("id", ids);
     if (productError) throw productError;
     if (!products || products.length !== ids.length)
       return Response.json({ error: "Un produit du panier est introuvable." }, { status: 400, headers: cors });
@@ -51,10 +51,6 @@ Deno.serve(async (req) => {
     for (const p of products) {
       const quantity = quantities.get(p.id)!;
       if (!p.published) return Response.json({ error: `Produit indisponible : ${p.name}` }, { status: 400, headers: cors });
-      if (Number(p.stock) < quantity) {
-        return Response.json({ error: `Stock insuffisant pour ${p.name}. Disponible : ${p.stock}.` }, { status: 409, headers: cors });
-      }
-
       const unit_price = Number(p.promo_price ?? p.price);
       subtotal += unit_price * quantity;
       items.push({ product_id: p.id, name: p.name, sku: p.sku, quantity, unit_price });
