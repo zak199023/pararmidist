@@ -55,3 +55,13 @@ La fonction `supabase/functions/create-order/index.ts` actuellement présente da
 La fonction génère aussi `orderNumber`, mais ne l'inclut pas dans l'objet inséré : le numéro est uniquement ajouté à la réponse renvoyée au navigateur. Il faut donc corriger la persistance du numéro et choisir une valeur de `payment_status` conforme aux contraintes réellement installées, après vérification de ces contraintes et des migrations.
 
 **Action volontairement différée :** ne pas déployer cette fonction corrigée tant que les valeurs autorisées par la base et les tests de commande ne sont pas confirmés.
+
+
+## Correctif de code appliqué sur la branche d'intégration
+
+Le fichier `supabase/functions/create-order/index.ts` a été ajusté sur cette branche :
+- `payment_status: 'unpaid'` est fourni explicitement, conformément à la migration CMI du dépôt qui définit cette valeur comme valeur initiale autorisée ;
+- `order_number` est maintenant inclus dans l'insertion en base ;
+- la réponse retourne la ligne enregistrée, donc le numéro réellement persisté.
+
+Ce correctif n'est pas déployé. Il reste à tester avec les contraintes exactes de la base active. Le contrôle de stock et sa décrémentation atomique doivent aussi être traités avant une mise en production : une simple lecture de stock ne protège pas contre deux commandes simultanées.
