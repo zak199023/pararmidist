@@ -46,3 +46,12 @@ Colonnes confirmées : `city`, `shipping_fee`, `is_active`, `created_at`, `updat
 - Ne pas réinitialiser les comptes, produits ou commandes.
 - Ne pas désactiver RLS ni ajouter de politique publique générale.
 - Ne pas exécuter de migration ou déployer en production avant revue et tests.
+
+
+## Défaut confirmé dans l'Edge Function actuellement sur la branche
+
+La fonction `supabase/functions/create-order/index.ts` actuellement présente dans le dépôt construit l'insertion `orders` sans fournir `payment_status`. Or le diagnostic de la base indique que cette colonne est `NOT NULL`. En l'absence d'une valeur par défaut (non vérifiée à ce stade), l'insertion peut échouer.
+
+La fonction génère aussi `orderNumber`, mais ne l'inclut pas dans l'objet inséré : le numéro est uniquement ajouté à la réponse renvoyée au navigateur. Il faut donc corriger la persistance du numéro et choisir une valeur de `payment_status` conforme aux contraintes réellement installées, après vérification de ces contraintes et des migrations.
+
+**Action volontairement différée :** ne pas déployer cette fonction corrigée tant que les valeurs autorisées par la base et les tests de commande ne sont pas confirmés.
