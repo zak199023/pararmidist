@@ -51,7 +51,10 @@ Deno.serve(async (req) => {
     for (const p of products) {
       const quantity = quantities.get(p.id)!;
       if (!p.published) return Response.json({ error: `Produit indisponible : ${p.name}` }, { status: 400, headers: cors });
-      
+      if (Number(p.stock) < quantity) {
+        return Response.json({ error: `Stock insuffisant pour ${p.name}. Disponible : ${p.stock}.` }, { status: 409, headers: cors });
+      }
+
       const unit_price = Number(p.promo_price ?? p.price);
       subtotal += unit_price * quantity;
       items.push({ product_id: p.id, name: p.name, sku: p.sku, quantity, unit_price });
@@ -64,7 +67,7 @@ Deno.serve(async (req) => {
       email: c.email?.trim() || null, city: c.city.trim(), address: c.address.trim(),
       notes: c.notes?.trim() || null, items, subtotal,
       shipping_fee: 0, total: subtotal, payment_method: "cash_on_delivery",
-      status: "pending"
+      payment_status: "unpaid", order_number: orderNumber, status: "pending"
     };
     const { data: saved, error: insertError } = await admin.from("orders").insert(order).select("*").single();
     if (insertError) throw insertError;
