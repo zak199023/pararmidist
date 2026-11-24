@@ -39,6 +39,7 @@ Deno.serve(async (req) => {
       quantities.set(id, (quantities.get(id) ?? 0) + qty);
     }
 
+    // Vente directe : aucun contrôle, décrément ou blocage lié au stock.
     const ids = [...quantities.keys()];
     const { data: products, error: productError } = await admin
       .from("products").select("id,name,sku,price,promo_price,published").in("id", ids);
