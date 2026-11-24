@@ -55,10 +55,8 @@ async function submitOrder(){
   const {data,error}=await db.functions.invoke("create-order",{body:{customer,items}});
   if(error)throw error;
   const o=data.order;
-  const lines=(o.items||[]).map(i=>`• ${i.name} × ${i.quantity} — ${money(i.unit_price*i.quantity)}`).join("\\n");
-  const msg=`Merci pour votre confiance auprès de ParaRmi-Dist !\\nCommande : ${o.order_number||o.id}\\n${lines}\\nSous-total : ${money(o.subtotal)}\\nLivraison : GRATUITE (0 MAD)\\nTotal : ${money(o.total)}\\nNous vous remercions pour votre achat.`;
-  cart=[];saveCart();checkoutModal(false);drawer(false);toast("Commande enregistrée avec succès.");
-  window.open(`https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
+  cart=[];saveCart();checkoutModal(false);drawer(false);
+  toast(`Commande ${o.order_number||""} enregistrée avec succès. Nous vous contacterons pour la confirmation.`);
  }catch(err){console.error(err);toast("Commande non enregistrée : "+(err.message||"erreur Supabase."))}
  finally{btn.disabled=false;btn.textContent="Confirmer ma commande"}
 }
