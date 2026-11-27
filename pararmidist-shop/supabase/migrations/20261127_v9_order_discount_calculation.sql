@@ -39,6 +39,7 @@ declare
 
   v_shipping_fee numeric := 50;
   v_subtotal numeric := 0;
+  v_total numeric := 0;
   v_subtotal_before_discount numeric := 0;
   v_discount_amount numeric := 0;
   v_discount_rate numeric := 0;
@@ -91,9 +92,16 @@ begin
   from public.promotion_settings
   where id = 1;
 
+  if not found then
+    v_promo_enabled := false;
+    v_discount_rate := 0;
+    v_promo_starts_at := null;
+    v_promo_ends_at := null;
+  end if;
+
   v_promo_active :=
-    v_promo_enabled
-    and v_discount_rate > 0
+    coalesce(v_promo_enabled, false)
+    and coalesce(v_discount_rate, 0) > 0
     and (v_promo_starts_at is null or now() >= v_promo_starts_at)
     and (v_promo_ends_at is null or now() <= v_promo_ends_at);
 
