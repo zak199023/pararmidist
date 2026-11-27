@@ -82,11 +82,13 @@ function promoIsActive(){
  return (!promoConfig.starts_at||now>=new Date(promoConfig.starts_at).getTime())&&(!promoConfig.ends_at||now<=new Date(promoConfig.ends_at).getTime());
 }
 function priceInfo(p){
- const hasProductPromo=p.promo_price!==null&&p.promo_price!==undefined&&Number(p.promo_price)>0;
- const base=hasProductPromo?Number(p.promo_price):Number(p.price);
+ const base=Math.max(0,Number(p.price)||0);
+ const promoValue=Number(p.promo_price);
+ const hasProductPromo=p.promo_price!==null&&p.promo_price!==undefined&&Number.isFinite(promoValue)&&promoValue>0&&promoValue<base;
+ const discountedBase=hasProductPromo?promoValue:base;
  const rate=(!hasProductPromo&&promoIsActive())?Number(promoConfig.discount_rate||5):0;
- const final=Math.round((base*(1-rate/100)+Number.EPSILON)*100)/100;
- return {base,final,rate,hasProductPromo,compareAt:Number(p.price),saving:Math.round((base-final+Number.EPSILON)*100)/100};
+ const final=Math.round((discountedBase*(1-rate/100)+Number.EPSILON)*100)/100;
+ return {base,final,rate,hasProductPromo,compareAt:base,saving:Math.round((base-final+Number.EPSILON)*100)/100};
 }
 async function loadPromoConfig(){
  if(!db)return;
@@ -118,7 +120,7 @@ function renderProducts(){
  const isDefault=!q&&!cat&&!sub;
  if(isDefault)list=list.slice(0,15);
  $("#product-total").textContent=isDefault?`${list.length} produits sélectionnés automatiquement`:`${list.length} produit(s)`;
- $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p),categoryName=categories.find(c=>String(c.id)===String(p.category_id))?.name||p.category||"",subcategoryName=subcategoryById(p.subcategory_id)?.name||p.subcategory||"";return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc([categoryName,subcategoryName].filter(Boolean).join(" · "))}</div><div class="product-buy"><div class="price">${money(pi.final)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+ $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p),categoryName=categories.find(c=>String(c.id)===String(p.category_id))?.name||p.category||"",subcategoryName=subcategoryById(p.subcategory_id)?.name||p.subcategory||"";return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc([categoryName,subcategoryName].filter(Boolean).join(" · "))}</div><div class="product-buy"><div class="price">${money(pi.final)} ${pi.compareAt>pi.final?`<span class="price-discount-note">−${Math.round((1-pi.final/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.compareAt>pi.final?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
  startFeaturedCarousel();renderHomePanels();
 }
 function startFeaturedCarousel(){
