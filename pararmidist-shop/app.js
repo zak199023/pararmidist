@@ -46,6 +46,29 @@ function renderProducts(){
  if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name,"fr"));
  $("#product-total").textContent=`${list.length} produit(s)`;
  $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.base)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+ startFeaturedCarousel();
+}
+function startFeaturedCarousel(){
+ if(window.featuredProductsTimer){clearInterval(window.featuredProductsTimer);window.featuredProductsTimer=null}
+ const host=$("#products");
+ if(!host||host.querySelectorAll(".product-card").length<2)return;
+ if(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+ let paused=false;
+ host.onmouseenter=()=>{paused=true};
+ host.onmouseleave=()=>{paused=false};
+ host.onfocusin=()=>{paused=true};
+ host.onfocusout=()=>{paused=false};
+ host.ontouchstart=()=>{paused=true};
+ host.ontouchend=()=>{setTimeout(()=>{paused=false},3500)};
+ window.featuredProductsTimer=setInterval(()=>{
+  if(paused)return;
+  const first=host.querySelector(".product-card");
+  if(!first)return;
+  const gap=parseFloat(getComputedStyle(host).gap)||16;
+  const step=first.getBoundingClientRect().width+gap;
+  const atEnd=host.scrollLeft+host.clientWidth>=host.scrollWidth-10;
+  host.scrollTo({left:atEnd?0:host.scrollLeft+step,behavior:"smooth"});
+ },3800);
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function saveCart(){localStorage.setItem("prd-cart",JSON.stringify(cart));renderCart()}
