@@ -391,3 +391,37 @@ footer{background:#720021;color:#fff;padding:28px clamp(20px,7vw,110px) 16px}
  .arrival-product b{font-size:8px}
  .product-wishlist{width:28px;height:28px;font-size:25px}
 }
+
+
+/* Finitions d'alignement sur la capture originale fournie */
+.announcement{display:flex;align-items:center;justify-content:space-between;gap:clamp(8px,1.2vw,20px);padding:0 clamp(14px,3vw,48px);font:700 12px "DM Sans",sans-serif}
+.announcement>span,.announcement>a{white-space:nowrap;color:#fff}
+.announcement .topbar-contact{margin-left:auto;text-decoration:none}
+.topbar-social{display:flex;align-items:center;gap:12px}
+.topbar-social a{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;color:#8e0732;background:#fff;font:700 13px Arial,sans-serif;text-decoration:none}
+.brand-text{gap:12px;min-width:0}
+.brand-lotus{width:160px;height:76px;flex:0 0 160px;filter:none}
+.brand-wordmark{font-size:clamp(34px,3.3vw,48px);white-space:nowrap;color:#8e0732}
+.brand-wordmark small{font-size:clamp(11px,1.05vw,15px);color:#a30942}
+.site-header{grid-template-columns:minmax(320px, .95fr) minmax(280px,1fr) auto;gap:20px}
+.main-nav{font-size:clamp(11px,.9vw,14px)}
+.main-nav a{padding-left:clamp(8px,1vw,16px);padding-right:clamp(8px,1vw,16px)}
+.newsletter-form{display:flex;width:min(100%,440px);height:46px;margin-top:6px;border:1px solid #f2c5d2;border-radius:28px;overflow:hidden;background:#fff;box-shadow:0 3px 9px #8d15331c}
+.newsletter-form input{flex:1;min-width:0;border:0;outline:0;padding:0 20px;background:#fff;color:#65001f;font:600 13px "DM Sans",sans-serif}
+.newsletter-form button{flex:0 0 145px;border:0;background:linear-gradient(90deg,#a30942,#790027);color:#fff;font:700 13px "DM Sans",sans-serif;cursor:pointer}
+.announcements-panel{padding-left:112px}
+@media(max-width:1050px){
+ .site-header{grid-template-columns:minmax(240px, .8fr) minmax(200px,1fr) auto;gap:12px}
+ .brand-lotus{width:112px;flex-basis:112px}
+ .brand-wordmark{font-size:34px}
+ .topbar-social{display:none}
+}
+@media(max-width:700px){
+ .announcement{justify-content:center;flex-wrap:wrap;padding:5px 8px;gap:6px}
+ .announcement .topbar-contact{display:none}
+ .site-header{grid-template-columns:1fr auto}
+ .brand-lotus{width:76px;height:48px;flex-basis:76px}
+ .brand-wordmark{font-size:27px}
+ .newsletter-form{height:42px}
+ .newsletter-form button{flex-basis:112px;font-size:11px}
+}
