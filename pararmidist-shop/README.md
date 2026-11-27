@@ -1,6 +1,6 @@
-# ParaRmi-Dist — version professionnelle V7
+# Rmi-Dist — version professionnelle V7
 
-Boutique web ParaRmi-Dist (Netlify) connectée à Supabase. Cette version est construite à partir de la dernière archive V6 et conserve les tables et commandes existantes.
+Boutique web Rmi-Dist (Netlify) connectée à Supabase. Cette version est construite à partir de la dernière archive V6 et conserve les tables et commandes existantes.
 
 ## Nouveautés V7
 - Vente directe indépendante du stock : aucune vérification, réservation ou décrémentation de quantité disponible lors d’une commande.
@@ -28,6 +28,8 @@ Boutique web ParaRmi-Dist (Netlify) connectée à Supabase. Cette version est co
 - Le paiement CMI demeure une préparation technique non activée tant que le contrat marchand et la documentation officielle ne sont pas disponibles.
 
 ## Installation obligatoire
+
+Cette version est servie depuis le dossier `pararmidist-shop/` configuré dans Netlify. Après fusion, vérifiez le déploiement Netlify de ce dossier et redéployez la fonction Supabase depuis ce même dossier avec `supabase functions deploy create-order`.
 1. Sauvegardez votre projet Supabase et gardez le déploiement Netlify précédent disponible comme retour arrière.
 2. Dans Supabase SQL Editor, exécutez uniquement `supabase/migrations/20261122_professional_commerce.sql` si elle n’a pas déjà été appliquée. Les modifications V7 de vente directe ne nécessitent aucune nouvelle migration SQL. Les migrations historiques V5 ne doivent pas être rejouées sur une base déjà à jour.
 3. Redéployez la fonction `create-order` mise à jour : `supabase functions deploy create-order`.
@@ -68,7 +70,7 @@ Les clients invités sont également enregistrés dans `public.customers` à par
 - Vérifier que le client apparaît dans l'onglet Clients après une commande.
 - Imprimer un rapport PDF.
 
-Coordonnées : ParaRmi-Dist · Casablanca, Maroc · +212 660-622369 · pararmidist@gmail.com · devise MAD.
+Coordonnées : Rmi-Dist · Casablanca, Maroc · +212 660-622369 · pararmidist@gmail.com · devise MAD.
 
 
 ## Impression et partage des commandes
