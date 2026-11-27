@@ -463,3 +463,17 @@ $("#checkout").onclick=startWebsiteOrder;$("#admin-open").onclick=()=>{modal(tru
 $("#menu-toggle").onclick=()=>$("#main-nav").classList.toggle("show");document.querySelectorAll("#main-nav a").forEach(a=>a.onclick=()=>$("#main-nav").classList.remove("show"));
 $("#year").textContent=new Date().getFullYear();renderCart();refreshAuth();loadTaxonomy().catch(err=>{console.error("Chargement du catalogue impossible",err);renderCategoryCards();renderCategoryFilters()}).then(loadProducts);if(db){loadPromoConfig().then(()=>{renderProducts();renderCart()});db.auth.onAuthStateChange(()=>refreshAuth())}
 if(!configured())console.info("Mode aperçu local actif. Consultez README.md pour connecter Supabase.");
+
+
+/* Newsletter de la maquette : ouvre un message prérempli vers l'adresse officielle.
+   Le stockage automatique des abonnés nécessite ensuite un service newsletter dédié. */
+document.addEventListener("submit",e=>{
+ if(e.target?.id!=="newsletter-form")return;
+ e.preventDefault();
+ const email=$("#newsletter-email")?.value.trim();
+ if(!email)return;
+ const subject=encodeURIComponent("Inscription aux prochaines annonces Rmi-Dist");
+ const body=encodeURIComponent("Bonjour Rmi-Dist,\n\nJe souhaite recevoir vos prochaines annonces et nouveautés.\nMon adresse e-mail : "+email);
+ window.location.href="mailto:pararmidist@gmail.com?subject="+subject+"&body="+body;
+ toast("Votre application e-mail va s'ouvrir pour confirmer votre inscription.");
+});
