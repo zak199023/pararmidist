@@ -17,8 +17,14 @@ const CATEGORY_CARDS = [
  {name:"Promotions",sprite:7,promotions:true},
  {name:"Soins Capillaires",sprite:8}
 ];
-const normalizeLabel = value => String(value??"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").trim().toLowerCase();
+const normalizeLabel = value => String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();
 const categoryByName = name => categories.find(c=>normalizeLabel(c.name)===normalizeLabel(name));
+const CATEGORY_ALIASES = {
+ "Produits Maman & Bébé":["Bébé & Maman","Maman & Bébé"],
+ "Produits Naturels":["Produits naturels"],
+ "Soins Capillaires":["Soins capillaires"]
+};
+const categoryNameMatches = (actual, expected) => normalizeLabel(actual)===normalizeLabel(expected)||(CATEGORY_ALIASES[expected]||[]).some(x=>normalizeLabel(x)===normalizeLabel(actual));
 const subcategoryById = id => subcategories.find(x=>String(x.id)===String(id));
 async function loadTaxonomy(){
  const fallback=CATEGORY_CARDS.filter(x=>!x.promotions).map(x=>({id:null,name:x.name}));
@@ -101,7 +107,7 @@ function renderProducts(){
   const productCategory=categories.find(c=>String(c.id)===String(p.category_id))?.name||p.category||"";
   const productSubcategory=subcategoryById(p.subcategory_id)?.name||p.subcategory||"";
   const matchesQuery=!q||normalizeLabel([p.name,p.brand,productCategory,productSubcategory,p.sku].join(" ")).includes(q);
-  const matchesCategory=!cat||(cat==="__promotions__"?(Number(p.promo_price)>0||(!p.promo_price&&promoIsActive())):(p.category_id?String(p.category_id)===String(cat):normalizeLabel(productCategory)===normalizeLabel(selectedName)));
+  const matchesCategory=!cat||(cat==="__promotions__"?(Number(p.promo_price)>0||(!p.promo_price&&promoIsActive())):(p.category_id?String(p.category_id)===String(cat):categoryNameMatches(productCategory,selectedName)));
   const matchesSubcategory=!sub||String(p.subcategory_id)===String(sub);
   return matchesQuery&&matchesCategory&&matchesSubcategory;
  });
@@ -115,7 +121,6 @@ function renderProducts(){
  $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p),categoryName=categories.find(c=>String(c.id)===String(p.category_id))?.name||p.category||"",subcategoryName=subcategoryById(p.subcategory_id)?.name||p.subcategory||"";return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc([categoryName,subcategoryName].filter(Boolean).join(" · "))}</div><div class="product-buy"><div class="price">${money(pi.final)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
  startFeaturedCarousel();renderHomePanels();
 }
-function startFeaturedCarousel(){
 function startFeaturedCarousel(){
  if(window.featuredProductsTimer){clearInterval(window.featuredProductsTimer);window.featuredProductsTimer=null}
  const host=$("#products");
@@ -286,7 +291,7 @@ function parseCSV(text){
  return rows.map((r,index)=>{const o={_line:index+2};headers.forEach((h,i)=>o[h]=(r[i]??'').trim());return o});
 }
 function csvCell(v){const s=String(v??'');return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
-function downloadProductCSVTemplate(){const content='sku;name;brand;category;subcategory;description;price;promo_price;image_url;published\\r\\nPRD-1001;Crème hydratante;Nivea;Cosmétiques & Beauté;;Crème visage;85;75;;true\\r\\n';const blob=new Blob(['\\uFEFF',content],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='modele-produits-rmi-dist.csv';a.click();URL.revokeObjectURL(url)}
+function downloadProductCSVTemplate(){const content='sku;name;brand;category;subcategory;description;price;promo_price;image_url;published\r\nPRD-1001;Crème hydratante;Nivea;Cosmétiques & Beauté;;Crème visage;85;75;;true\r\n';const blob=new Blob(['\uFEFF',content],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='modele-produits-rmi-dist.csv';a.click();URL.revokeObjectURL(url)}
 
 function csvRowToProduct(r){
  const name=r.name||'',category=r.category||'',subcategory=r.subcategory||'',priceRaw=r.price??'';const price=Number(priceRaw);
