@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
     for (const p of products) {
       const quantity = quantities.get(p.id)!;
       if (!p.published) return Response.json({ error: `Produit indisponible : ${p.name}` }, { status: 400, headers: cors });
-      const hasProductPromotion = p.promo_price !== null && p.promo_price !== undefined && Number(p.promo_price) >= 0;
+      const hasProductPromotion = p.promo_price !== null && p.promo_price !== undefined && Number(p.promo_price) > 0;
       const baseUnitPrice = Number(hasProductPromotion ? p.promo_price : p.price);
       const lineRate = hasProductPromotion ? 0 : configuredRate;
       const unitDiscount = round2(baseUnitPrice * lineRate / 100);
