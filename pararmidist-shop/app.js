@@ -45,7 +45,7 @@ function renderCategoryCards(){
  host.innerHTML=CATEGORY_CARDS.map(item=>{
   const dbCat=item.promotions?null:categoryByName(item.name);
   const value=item.promotions?"__promotions__":(dbCat?.id||item.name);
-  return `<button type="button" class="category-card" data-category="${esc(value)}" aria-label="Voir ${esc(item.name)}"><span class="category-art sprite-${item.sprite}" aria-hidden="true"></span><b>${esc(item.name)} <i aria-hidden="true">→</i></b></button>`;
+  return `<button type="button" class="category-card" data-category="${esc(value)}" aria-label="Voir ${esc(item.name)}"><span class="category-art category-sprite sprite-${item.sprite}" aria-hidden="true"></span><b>${esc(item.name)} <i aria-hidden="true">→</i></b></button>`;
  }).join("");
 }
 function renderCategoryFilters(){
