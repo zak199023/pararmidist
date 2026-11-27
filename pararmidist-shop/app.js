@@ -32,6 +32,7 @@ async function loadPromoConfig(){
  if(!db)return;
  const {data,error}=await db.from("promotion_settings").select("active,discount_rate,starts_at,ends_at").eq("id",1).maybeSingle();
  if(!error&&data){promoConfig=data;promoConfigLoaded=true}else{promoConfig={active:false,discount_rate:5,starts_at:null,ends_at:null};promoConfigLoaded=false;if(error)console.warn("Paramètres promotionnels non chargés :",error.message)}
+ renderHomePanels();
 }
 async function loadProducts(){
  if(db){const {data,error}=await db.from("products").select("*").eq("published",true).order("created_at",{ascending:false});if(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}else products=data||[]}
@@ -47,6 +48,7 @@ function renderProducts(){
  $("#product-total").textContent=`${list.length} produit(s)`;
  $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.base)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
  startFeaturedCarousel();
+ renderHomePanels();
 }
 function startFeaturedCarousel(){
  if(window.featuredProductsTimer){clearInterval(window.featuredProductsTimer);window.featuredProductsTimer=null}
@@ -69,6 +71,20 @@ function startFeaturedCarousel(){
   const atEnd=host.scrollLeft+host.clientWidth>=host.scrollWidth-10;
   host.scrollTo({left:atEnd?0:host.scrollLeft+step,behavior:"smooth"});
  },3800);
+}
+function renderHomePanels(){
+ const offerTitle=$("#offer-title"),offerDetail=$("#offer-detail"),offerCta=$("#offer-cta");
+ if(offerTitle){
+  const discounted=products.filter(p=>Number(p.promo_price)>0);
+  if(promoIsActive()){offerTitle.textContent="Jusqu’à "+Number(promoConfig.discount_rate||5)+" %";offerDetail.textContent="Remise active sur les produits éligibles.";offerCta.textContent="Profiter maintenant →"}
+  else if(discounted.length){offerTitle.textContent=discounted.length+" offres à découvrir";offerDetail.textContent="Des prix promotionnels sont disponibles sur une sélection de produits.";offerCta.textContent="Voir les promotions →"}
+  else{offerTitle.textContent="Bientôt de nouvelles offres";offerDetail.textContent="Retrouvez ici les campagnes promotionnelles Rmi-Dist.";offerCta.textContent="Voir la boutique →"}
+ }
+ const host=$("#new-arrivals");
+ if(host){
+  const recent=products.slice(0,3);
+  host.innerHTML=recent.length?recent.map(p=>{const pi=priceInfo(p);return '<article class="arrival-product">'+(p.image_url?'<img src="'+esc(p.image_url)+'" alt="'+esc(p.name)+'" loading="lazy">':'<span aria-hidden="true">✿</span>')+'<div><b>'+esc(p.name)+'</b><small>'+money(pi.final)+'</small></div></article>'}).join(""):'<span class="muted">Les nouveautés seront affichées ici dès leur publication.</span>';
+ }
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function saveCart(){localStorage.setItem("prd-cart",JSON.stringify(cart));renderCart()}
@@ -315,6 +331,7 @@ document.addEventListener('change',async e=>{
 });
 document.addEventListener("click",async e=>{
  if(e.target.closest("#place-order")){await submitOrder();return}
+ const featuredScroll=e.target.closest("[data-featured-scroll]");if(featuredScroll){const host=$("#products");const card=host?.querySelector(".product-card");if(host&&card){const gap=parseFloat(getComputedStyle(host).gap)||12;host.scrollBy({left:Number(featuredScroll.dataset.featuredScroll)*(card.getBoundingClientRect().width+gap)*2,behavior:"smooth"})}return}
  const printBtn=e.target.closest('[data-print-order]');
  if(printBtn){const order=adminOrders.find(o=>String(o.id)===printBtn.dataset.printOrder);if(order)printOrder(order);return}
  const emailBtn=e.target.closest('[data-email-order]');
