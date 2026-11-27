@@ -238,3 +238,26 @@ footer{background:#720021;color:#fff;padding:28px clamp(20px,7vw,110px) 16px}
 .brand-text{display:flex;align-items:center;gap:10px;text-decoration:none;color:#760027;width:auto;min-width:220px}.brand-lotus{font-size:44px;line-height:1;color:#d62969;text-shadow:0 2px 0 #bd8740}.brand-wordmark{font-family:"Playfair Display",serif;font-size:36px;font-weight:700;line-height:1}.brand-wordmark small{display:block;font-family:"Playfair Display",serif;font-size:11px;font-style:italic;text-align:center;color:#8b2446;letter-spacing:.3px}.brand-badge{display:inline-grid;justify-items:center;gap:2px;color:#78002d;font-family:"Playfair Display",serif;font-size:27px}.brand-badge small{font-family:"DM Sans",sans-serif;font-size:9px;color:#8b5b69}
 .hero-redesign{position:relative;isolation:isolate;display:flex;align-items:center;justify-content:space-between;min-height:310px;padding:35px clamp(24px,7vw,105px);overflow:hidden;background:radial-gradient(circle at 82% 35%,#fff 0,transparent 26%),radial-gradient(circle at 8% 95%,#f7b2c7 0,transparent 34%),linear-gradient(110deg,#fff0f4 0%,#ffdce6 52%,#f5b3c6 100%)}.hero-redesign:before,.hero-redesign:after{content:"✿";position:absolute;z-index:-1;color:#e56a91;opacity:.18;font-size:180px}.hero-redesign:before{left:-25px;bottom:-70px}.hero-redesign:after{right:5%;top:-75px;font-size:130px}.hero-copy{position:relative;z-index:2;max-width:48%;color:#65001f}.hero-kicker{font-size:10px;letter-spacing:.22em;font-weight:800;color:#a35e36}.hero-copy h1{font-family:"Playfair Display",serif;font-size:clamp(44px,6vw,76px);line-height:1;margin:8px 0;color:#760027}.hero-tagline{font-family:"Playfair Display",serif;font-size:clamp(20px,2.5vw,30px);font-style:italic;line-height:1.25;color:#7b173c}.hero-products{position:relative;z-index:1;display:flex;align-items:flex-end;justify-content:center;gap:14px;width:44%;height:250px}.hero-bottle,.hero-jar{position:relative;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;font-weight:800;letter-spacing:.08em;color:#8b2446;box-shadow:0 15px 24px #71002025,inset 0 0 0 2px #ffffffb0}.hero-bottle{width:82px;height:190px;border-radius:18px 18px 12px 12px;background:linear-gradient(90deg,#f9e8ed,#fff 40%,#eab8c7);border:2px solid #e7b2c2}.hero-bottle:before{content:"";position:absolute;top:-22px;width:28px;height:23px;border-radius:6px 6px 0 0;background:linear-gradient(90deg,#9a6b3e,#f3d39c,#a46d37)}.bottle-cleanser{height:215px;background:linear-gradient(90deg,#e8f5fa,#fff 48%,#cde7f2)}.bottle-serum{background:linear-gradient(90deg,#501329,#24101b 45%,#9c5b71);color:#fff}.hero-jar{width:112px;height:85px;border-radius:14px 14px 25px 25px;background:linear-gradient(90deg,#f3dce3,#fff 45%,#e7bdc9)}.hero-jar:before{content:"";position:absolute;top:-12px;left:-2px;right:-2px;height:14px;border-radius:7px;background:linear-gradient(90deg,#9b6c40,#f7d9a1,#9b6c40)}.hero-assurances{position:absolute;right:18px;top:18px;display:grid;gap:8px;color:#6e1232;font-size:11px}.hero-assurances span{padding:9px 12px;border:1px solid #ffffffa8;border-radius:20px;background:#fff8}.hero-redesign .btn{margin-top:12px}
 @media(max-width:700px){.brand-text{min-width:0}.brand-lotus{font-size:32px}.brand-wordmark{font-size:27px}.brand-wordmark small{font-size:9px}.hero-redesign{min-height:290px;padding:22px 18px;align-items:flex-start}.hero-copy{max-width:62%}.hero-copy h1{font-size:42px}.hero-tagline{font-size:19px}.hero-products{position:absolute;right:6px;bottom:5px;width:45%;height:170px;gap:6px}.hero-bottle{width:49px;height:130px;font-size:7px}.bottle-cleanser{height:150px}.hero-jar{width:66px;height:55px;font-size:7px}.hero-assurances{display:none}.hero-redesign .btn{font-size:10px;padding:10px 12px}}
+
+
+/* Maquette Rmi-Dist validée : 8 catégories en 4 colonnes, puis produits vedettes défilants */
+.category-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.category-card{min-height:150px}
+.category-art{width:45%;height:118px;object-fit:cover}
+.category-emoji{display:grid;place-items:center;font-size:54px}
+.product-grid{
+ display:flex;gap:16px;overflow-x:auto;overflow-y:hidden;
+ overscroll-behavior-x:contain;scroll-snap-type:x mandatory;
+ scroll-behavior:smooth;padding:4px 3px 16px;
+ scrollbar-width:thin;scrollbar-color:#c87591 #fff0f4;
+}
+.product-grid>.product-card{flex:0 0 clamp(220px,23vw,270px);scroll-snap-align:start}
+.product-grid>.empty,.product-grid>.loading{flex:1 0 100%}
+@media(max-width:700px){
+ .category-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .category-card{min-height:100px;padding:8px;gap:7px}
+ .category-art{width:44%;height:76px}
+ .product-grid{gap:10px}
+ .product-grid>.product-card{flex-basis:72vw}
+}
+@media(prefers-reduced-motion:reduce){.product-grid{scroll-behavior:auto}}
