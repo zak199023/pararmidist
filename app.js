@@ -1,4 +1,4 @@
-/* ParaRmi-Dist storefront. Configure Supabase in this file before launch. */
+/* Rmi-Dist storefront. Configure Supabase in this file before launch. */
 const CONFIG = { supabaseUrl: "https://hzosrdvaajjfenbzjxhg.supabase.co", supabaseAnonKey: "sb_publishable_AF7DhI63sGlRQXtnGZ3l-w_9EBLu1yQ", whatsapp: "212660622369" };
 const money = n => new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(Number(n||0));
 const $ = s => document.querySelector(s);
@@ -22,7 +22,7 @@ function promoIsActive(){
  return (!promoConfig.starts_at||now>=new Date(promoConfig.starts_at).getTime())&&(!promoConfig.ends_at||now<=new Date(promoConfig.ends_at).getTime());
 }
 function priceInfo(p){
- const hasProductPromo=p.promo_price!==null&&p.promo_price!==undefined&&Number(p.promo_price)>=0;
+ const hasProductPromo=p.promo_price!==null&&p.promo_price!==undefined&&Number(p.promo_price)>0;
  const base=hasProductPromo?Number(p.promo_price):Number(p.price);
  const rate=(!hasProductPromo&&promoIsActive())?Number(promoConfig.discount_rate||5):0;
  const final=Math.round((base*(1-rate/100)+Number.EPSILON)*100)/100;
@@ -40,12 +40,12 @@ async function loadProducts(){
 }
 function renderProducts(){
  const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,sort=$("#sort").value;
- let list=products.filter(p=>(!q||[p.name,p.brand,p.category,p.sku].join(" ").toLowerCase().includes(q))&&(!cat||p.category===cat));
+ let list=products.filter(p=>{const matchesQuery=!q||[p.name,p.brand,p.category,p.sku].join(" ").toLowerCase().includes(q);const matchesCategory=!cat||(cat==="__promotions__"?(Number(p.promo_price)>0||(!p.promo_price&&promoIsActive())):p.category===cat);return matchesQuery&&matchesCategory});
  if(sort==="price-asc")list.sort((a,b)=>priceInfo(a).final-priceInfo(b).final);
  if(sort==="price-desc")list.sort((a,b)=>priceInfo(b).final-priceInfo(a).final);
  if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name,"fr"));
  $("#product-total").textContent=`${list.length} produit(s)`;
- $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"ParaRmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.base)} ${pi.hasProductPromo?'<span class="price-discount-note">−38%</span>':pi.rate?'<span class="price-discount-note">−5% au panier</span>':''} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+ $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.base)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function saveCart(){localStorage.setItem("prd-cart",JSON.stringify(cart));renderCart()}
@@ -56,7 +56,7 @@ function renderCart(){
  const before=lines.reduce((s,p)=>s+priceInfo(p).base*p.qty,0),savings=lines.reduce((s,p)=>s+priceInfo(p).saving*p.qty,0),total=Math.max(0,before-savings);
  $("#cart-lines").innerHTML=lines.length?lines.map(p=>{const pi=priceInfo(p);return `<div class="cart-line"><div><b>${esc(p.name)}</b><small>${money(pi.final)} ${pi.rate?`· remise ${pi.rate}% non cumulable`:pi.hasProductPromo?'· prix promotionnel':''} · ${esc(p.sku||'')}</small><div class="qty-controls" role="group" aria-label="Quantité de ${esc(p.name)}"><button class="qty-step" data-qty="${esc(p.id)}" data-delta="-1" aria-label="Diminuer la quantité" title="Diminuer">−</button><span class="qty-value" aria-live="polite">${p.qty}</span><button class="qty-step qty-plus" data-qty="${esc(p.id)}" data-delta="1" aria-label="Augmenter la quantité" title="Augmenter">+</button><button class="qty-remove" data-remove="${esc(p.id)}" aria-label="Supprimer ${esc(p.name)} du panier" title="Supprimer du panier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m3 3v7m6-7v7"/></svg></button></div></div><strong>${money(pi.final*p.qty)}</strong></div>`}).join(''):'<div class="empty">Votre panier est encore vide.</div>';
  $("#cart-total").textContent=money(total);
- const foot=$(".cart-foot");let summary=$("#cart-discount-summary");if(!summary&&foot){summary=document.createElement('div');summary.id='cart-discount-summary';summary.className='cart-discount-summary';foot.insertBefore(summary,foot.querySelector('.cart-total'))}if(summary)summary.innerHTML=savings>0?`<span>Sous-total</span><b>${money(before)}</b><span>Remise ParaRmi-Dist</span><b>− ${money(savings)}</b>`:'';
+ const foot=$(".cart-foot");let summary=$("#cart-discount-summary");if(!summary&&foot){summary=document.createElement('div');summary.id='cart-discount-summary';summary.className='cart-discount-summary';foot.insertBefore(summary,foot.querySelector('.cart-total'))}if(summary)summary.innerHTML=savings>0?`<span>Sous-total</span><b>${money(before)}</b><span>Remise Rmi-Dist</span><b>− ${money(savings)}</b>`:'';
 }
 function drawer(open){$("#cart-drawer").classList.toggle("open",open);$("#drawer-backdrop").classList.toggle("open",open)}
 function checkoutModal(open){
@@ -70,9 +70,20 @@ function startWebsiteOrder(){
  if(!promoConfigLoaded){toast("Les tarifs sont en cours de vérification. Réessayez dans un instant.");return}
  const lines=cart.map(x=>{const p=products.find(z=>z.id===x.id)||sample.find(z=>z.id===x.id);return p?{...p,qty:x.qty}:null}).filter(Boolean);
  const base=lines.reduce((s,p)=>s+priceInfo(p).base*p.qty,0),discount=lines.reduce((s,p)=>s+priceInfo(p).saving*p.qty,0),total=base-discount;
- const summary=$("#checkout-price-summary");if(summary)summary.innerHTML=`<div><span>Sous-total</span><b>${money(base)}</b></div>${discount?`<div><span>Remise ParaRmi-Dist</span><b>− ${money(discount)}</b></div>`:''}<div class="checkout-grand-total"><span>Total à payer</span><b>${money(total)}</b></div><small>La remise générale ne se cumule pas avec un prix déjà promotionnel. Le montant définitif est recalculé par notre serveur.</small>`;
+ const summary=$("#checkout-price-summary");if(summary)summary.innerHTML=`<div><span>Sous-total</span><b>${money(base)}</b></div>${discount?`<div><span>Remise Rmi-Dist</span><b>− ${money(discount)}</b></div>`:''}<div class="checkout-grand-total"><span>Total à payer</span><b>${money(total)}</b></div><small>La remise générale ne se cumule pas avec un prix déjà promotionnel. Le montant définitif est recalculé par notre serveur.</small>`;
  checkoutModal(true);
 }
+function showOrderConfirmation(order,reference){
+ const old=document.getElementById("order-success-modal");if(old)old.remove();
+ const waText="Bonjour Rmi-Dist, je viens de passer la commande "+reference+". Pouvez-vous me confirmer sa prise en charge ?";
+ const el=document.createElement("section");el.id="order-success-modal";el.className="order-success-modal";
+ el.setAttribute("role","dialog");el.setAttribute("aria-modal","true");el.setAttribute("aria-labelledby","order-success-title");
+ el.innerHTML="<div class=\"order-success-card\"><button type=\"button\" class=\"close-btn order-success-close\" aria-label=\"Fermer\">×</button><div class=\"order-success-mark\">✓</div><p class=\"eyebrow\">RMI-DIST</p><h2 id=\"order-success-title\">Merci pour votre commande !</h2><p>Votre commande <b>"+esc(reference)+"</b> a bien été enregistrée.</p><p class=\"order-success-total\">Total des produits : <b>"+money(order.total)+"</b></p><p class=\"order-success-note\">Notre équipe vous contactera pour confirmer la livraison. Livraison gratuite à Casablanca ; pour les autres villes, les frais de transport seront confirmés par notre équipe.</p><a class=\"btn btn-dark full\" href=\"https://wa.me/"+CONFIG.whatsapp+"?text="+encodeURIComponent(waText)+"\" target=\"_blank\" rel=\"noopener noreferrer\">Contacter Rmi-Dist sur WhatsApp</a><button type=\"button\" class=\"btn btn-light full order-success-done\">Continuer mes achats</button></div>";
+ document.body.appendChild(el);
+ const close=()=>el.remove();el.querySelector(".order-success-close").onclick=close;el.querySelector(".order-success-done").onclick=close;
+ el.addEventListener("click",e=>{if(e.target===el)close()});
+}
+
 async function submitOrder(){
  const form=$("#checkout-form");if(!form.reportValidity())return;
  const customer={customer_name:$("#c-name").value.trim(),phone:$("#c-phone").value.trim(),email:$("#c-email").value.trim(),city:$("#c-city").value.trim(),address:$("#c-address").value.trim(),notes:$("#c-notes").value.trim()};
@@ -81,9 +92,12 @@ async function submitOrder(){
  try{
   const {data,error}=await db.functions.invoke("create-order",{body:{customer,items}});
   if(error)throw error;
-  const o=data.order;
+  const o=data?.order;
+  if(!o?.id)throw new Error(data?.error||"Le serveur n’a pas confirmé l’enregistrement de la commande.");
   cart=[];saveCart();checkoutModal(false);drawer(false);
-  toast(`Merci ! Votre commande ${o.order_number||o.id} a bien été enregistrée.`);
+  const ref=o.order_number||String(o.id).slice(0,8).toUpperCase();
+  toast(`Merci ! Votre commande ${ref} a bien été enregistrée.`);
+  showOrderConfirmation(o,ref);
  }catch(err){console.error(err);toast("Commande non enregistrée : "+(err.message||"erreur Supabase."))}
  finally{btn.disabled=false;btn.textContent="Confirmer ma commande"}
 }
@@ -101,7 +115,7 @@ function accountPanel(){
  if(!currentUser){
   host.innerHTML=`<div class="admin-panel"><p class="admin-hint">Créez votre compte pour retrouver vos commandes à tout moment.</p><label>Nom complet</label><input id="acc-name" autocomplete="name"><label>E-mail</label><input id="acc-email" type="email" autocomplete="email"><label>Mot de passe</label><input id="acc-password" type="password" minlength="8" autocomplete="new-password"><div class="account-actions"><button class="btn btn-dark full" id="acc-signup">Créer mon compte</button><button class="btn btn-light full" id="acc-login">J'ai déjà un compte</button></div></div>`;
   $("#acc-signup").onclick=async()=>{const name=$("#acc-name").value.trim(),email=$("#acc-email").value.trim(),password=$("#acc-password").value;if(!name||!email||password.length<8){toast("Indiquez votre nom, un e-mail et un mot de passe de 8 caractères minimum.");return}const {data,error}=await db.auth.signUp({email,password,options:{data:{full_name:name}}});if(error){toast("Inscription impossible : "+error.message);return}if(data.session){await refreshAuth();accountPanel();toast("Compte créé avec succès.")}else toast("Compte créé. Vérifiez votre e-mail pour confirmer l'inscription.")};
-  $("#acc-login").onclick=async()=>{const email=$("#acc-email").value.trim(),password=$("#acc-password").value;if(!email||!password){toast("Saisissez votre e-mail et votre mot de passe.");return}const {error}=await db.auth.signInWithPassword({email,password});if(error){toast("Connexion refusée : "+error.message);return}await refreshAuth();accountPanel();toast("Bienvenue sur ParaRmi-Dist.")};
+  $("#acc-login").onclick=async()=>{const email=$("#acc-email").value.trim(),password=$("#acc-password").value;if(!email||!password){toast("Saisissez votre e-mail et votre mot de passe.");return}const {error}=await db.auth.signInWithPassword({email,password});if(error){toast("Connexion refusée : "+error.message);return}await refreshAuth();accountPanel();toast("Bienvenue sur Rmi-Dist.")};
  }else{
   host.innerHTML=`<div class="admin-panel"><p class="admin-hint">Connecté avec ${esc(currentUser.email||"votre compte")}</p><h4>Mes commandes</h4><div id="customer-orders">Chargement…</div><button class="btn btn-light full" id="acc-logout">Me déconnecter</button></div>`;
   loadCustomerOrders();
@@ -128,13 +142,13 @@ function adminLogin(){
  else $("#admin-login").onclick=async()=>{const {data,error}=await db.auth.signInWithPassword({email:$("#admin-email").value,password:$("#admin-password").value});if(error){toast("Connexion refusée : "+error.message);return}const {data:profile}=await db.from("profiles").select("role").eq("id",data.user.id).single();if(profile?.role!=="admin"){await db.auth.signOut();toast("Ce compte n'a pas le rôle administrateur.");return}isAdmin=true;adminDashboard()};
 }
 
-const ADMIN_CATEGORIES=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Bébé & Maman","Bien-être"];
+const ADMIN_CATEGORIES=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Bébé & Maman","Bien-être","Soins capillaires","Produits naturels"];
 const ORDER_STATUSES=["pending","confirmed","preparing","shipped","delivered","cancelled"];
 const statusLabel=s=>({pending:"En attente",confirmed:"Confirmée",preparing:"En préparation",shipped:"Expédiée",delivered:"Livrée",cancelled:"Annulée"}[s]||s||"—");
 function adminDashboard(){
  adminTab="overview";
  $("#admin-modal").classList.add("admin-modal-wide");
- $("#admin-content").innerHTML=`<div class="admin-shell"><div class="admin-topline"><div><p class="eyebrow">CENTRE DE PILOTAGE</p><h3>Gestion ParaRmi-Dist</h3><p class="admin-hint">Vue centralisée de votre activité commerciale. Les données proviennent de Supabase.</p></div><button class="btn btn-light" id="admin-refresh">Actualiser</button></div><nav class="admin-tabs" aria-label="Navigation administration"><button data-admin-tab="overview" class="active">Vue générale</button><button data-admin-tab="orders">Commandes</button><button data-admin-tab="customers">Clients</button><button data-admin-tab="products">Produits</button><button data-admin-tab="promotion">Promotions</button><button data-admin-tab="reports">Rapports</button></nav><div id="admin-workspace"><div class="admin-loading">Chargement des données commerciales…</div></div><div class="admin-footer"><span>Session administrateur sécurisée</span><button class="btn btn-light" id="admin-logout">Déconnexion</button></div></div>`;
+ $("#admin-content").innerHTML=`<div class="admin-shell"><div class="admin-topline"><div><p class="eyebrow">CENTRE DE PILOTAGE</p><h3>Gestion Rmi-Dist</h3><p class="admin-hint">Vue centralisée de votre activité commerciale. Les données proviennent de Supabase.</p></div><button class="btn btn-light" id="admin-refresh">Actualiser</button></div><nav class="admin-tabs" aria-label="Navigation administration"><button data-admin-tab="overview" class="active">Vue générale</button><button data-admin-tab="orders">Commandes</button><button data-admin-tab="customers">Clients</button><button data-admin-tab="products">Produits</button><button data-admin-tab="promotion">Promotions</button><button data-admin-tab="reports">Rapports</button></nav><div id="admin-workspace"><div class="admin-loading">Chargement des données commerciales…</div></div><div class="admin-footer"><span>Session administrateur sécurisée</span><button class="btn btn-light" id="admin-logout">Déconnexion</button></div></div>`;
  $("#admin-refresh").onclick=loadAdminData;
  $("#admin-logout").onclick=async()=>{await db.auth.signOut();isAdmin=false;$("#admin-modal").classList.remove("admin-modal-wide");adminLogin()};
  loadAdminData();
@@ -215,7 +229,7 @@ function renderAdminTab(){
   $("#p-cancel-edit").onclick=()=>{["p-id","p-name","p-brand","p-sku","p-price","p-promo","p-image","p-desc"].forEach(id=>$("#"+id).value="");$("#p-save").textContent="Ajouter le produit";$("#p-cancel-edit").hidden=true};
  } else if(adminTab==='promotion'){
   const pr=adminPromo||{active:true,discount_rate:5,starts_at:null,ends_at:null};
-  host.innerHTML=`${adminPromoError?`<div class="admin-error">La table de campagne n’est pas disponible. Exécutez la migration 20261122_professional_commerce.sql dans Supabase. Détail : ${esc(adminPromoError)}</div>`:''}<div class="admin-card promotion-editor"><h4>Campagne ParaRmi-Dist</h4><p>La remise générale s'applique uniquement aux produits sans prix promotionnel. Un article déjà en promotion ne reçoit pas une deuxième réduction.</p><label class="admin-toggle"><input id="promo-active" type="checkbox" ${pr.active?'checked':''}> Campagne active</label><label>Taux de remise (%)<input id="promo-rate" type="number" min="0" max="90" step="0.5" value="${Number(pr.discount_rate||5)}"></label><div class="admin-form-grid"><label>Début de la campagne<input id="promo-start" type="datetime-local" value="${toLocalInput(pr.starts_at)}"></label><label>Fin de la campagne<input id="promo-end" type="datetime-local" value="${toLocalInput(pr.ends_at)}"></label></div><button class="btn btn-dark" id="promo-save">Enregistrer la campagne</button><p class="admin-note">Le serveur recalcule les prix et la remise au moment de la commande. Le montant envoyé par le navigateur n'est jamais considéré comme fiable.</p></div>`;
+  host.innerHTML=`${adminPromoError?`<div class="admin-error">La table de campagne n’est pas disponible. Exécutez la migration 20261122_professional_commerce.sql dans Supabase. Détail : ${esc(adminPromoError)}</div>`:''}<div class="admin-card promotion-editor"><h4>Campagne Rmi-Dist</h4><p>La remise générale s'applique uniquement aux produits sans prix promotionnel. Un article déjà en promotion ne reçoit pas une deuxième réduction.</p><label class="admin-toggle"><input id="promo-active" type="checkbox" ${pr.active?'checked':''}> Campagne active</label><label>Taux de remise (%)<input id="promo-rate" type="number" min="0" max="90" step="0.5" value="${Number(pr.discount_rate||5)}"></label><div class="admin-form-grid"><label>Début de la campagne<input id="promo-start" type="datetime-local" value="${toLocalInput(pr.starts_at)}"></label><label>Fin de la campagne<input id="promo-end" type="datetime-local" value="${toLocalInput(pr.ends_at)}"></label></div><button class="btn btn-dark" id="promo-save">Enregistrer la campagne</button><p class="admin-note">Le serveur recalcule les prix et la remise au moment de la commande. Le montant envoyé par le navigateur n'est jamais considéré comme fiable.</p></div>`;
   $("#promo-save").onclick=savePromotion;
  } else if(adminTab==='reports'){
   host.innerHTML=`<div class="admin-section-head"><div><h4>Rapports commerciaux</h4><p>Choisissez une période pour analyser les commandes et les ventes.</p></div><button class="btn btn-light" id="report-print">Imprimer / Enregistrer en PDF</button></div><div class="report-filters"><label>Du<input id="report-from" type="date"></label><label>Au<input id="report-to" type="date"></label><button class="btn btn-dark" id="report-apply">Appliquer</button></div><div id="report-result">${renderReportHtml(adminOrders)}</div>`;
@@ -234,7 +248,7 @@ function orderItemsForMessage(o){
 function orderReference(o){return o.order_number||`PRD-${String(o.id).slice(0,8).toUpperCase()}`}
 function orderShareText(o){
  const date=o.created_at?new Date(o.created_at).toLocaleString('fr-MA'):'—';
- return `ParaRmi-Dist — Récapitulatif de commande\nCommande : ${orderReference(o)}\nDate : ${date}\nClient : ${o.customer_name||'Client'}\nTéléphone : ${o.phone||'—'}\nE-mail : ${o.email||'—'}\nAdresse : ${o.address||'—'}, ${o.city||''}\n\nArticles :\n${orderItemsForMessage(o)}\n\nSous-total : ${money(o.subtotal_before_discount??o.subtotal??o.total)}\nRemise : ${money(o.discount_amount||0)}\nTotal à payer : ${money(o.total)}\nPaiement : ${o.payment_method||'—'}\nÉtat : ${statusLabel(o.status)}\n\nMerci pour votre confiance.`;
+ return `Rmi-Dist — Récapitulatif de commande\nCommande : ${orderReference(o)}\nDate : ${date}\nClient : ${o.customer_name||'Client'}\nTéléphone : ${o.phone||'—'}\nE-mail : ${o.email||'—'}\nAdresse : ${o.address||'—'}, ${o.city||''}\n\nArticles :\n${orderItemsForMessage(o)}\n\nSous-total : ${money(o.subtotal_before_discount??o.subtotal??o.total)}\nRemise : ${money(o.discount_amount||0)}\nTotal à payer : ${money(o.total)}\nPaiement : ${o.payment_method||'—'}\nÉtat : ${statusLabel(o.status)}\n\nMerci pour votre confiance.`;
 }
 function normalizedWhatsAppNumber(phone){
  let n=String(phone||'').replace(/\D/g,'');
@@ -247,7 +261,7 @@ function printOrder(o){
  const w=window.open('','_blank','width=850,height=900');
  if(!w){toast('Autorisez les fenêtres pop-up pour imprimer la commande.');return}
  const rows=(Array.isArray(o.items)?o.items:[]).map(i=>`<tr><td>${esc(i.name||'Produit')}</td><td>${Number(i.quantity||1)}</td><td>${money(i.unit_price||0)}</td><td>${money(i.line_total??(Number(i.unit_price||0)*Number(i.quantity||1)))}</td></tr>`).join('');
- const content=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Commande ${esc(orderReference(o))}</title><style>body{font:14px Arial,sans-serif;color:#28202a;margin:36px}h1{color:#7b173c;margin-bottom:4px}.muted{color:#766b73}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}th{background:#f8eef2}.totals{margin-left:auto;width:300px}.totals div{display:flex;justify-content:space-between;padding:6px}.grand{font-size:19px;font-weight:bold;border-top:2px solid #7b173c;margin-top:8px;padding-top:12px}.contact{margin-top:28px;white-space:pre-line}@media print{button{display:none}}</style></head><body><h1>ParaRmi-Dist</h1><div class="muted">Bon de commande</div><h2>${esc(orderReference(o))}</h2><p>Date : ${esc(o.created_at?new Date(o.created_at).toLocaleString('fr-MA'):'—')}</p><h3>Informations client</h3><p>${esc(o.customer_name||'Client')}<br>${esc(o.phone||'')}<br>${esc(o.email||'')}<br>${esc(o.address||'')} ${esc(o.city||'')}</p><h3>Articles commandés</h3><table><thead><tr><th>Produit</th><th>Qté</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="totals"><div><span>Sous-total</span><b>${money(o.subtotal_before_discount??o.subtotal??o.total)}</b></div><div><span>Remise</span><b>− ${money(o.discount_amount||0)}</b></div><div class="grand"><span>Total à payer</span><span>${money(o.total)}</span></div></div><p class="contact">Paiement : ${esc(o.payment_method||'—')}<br>Statut : ${esc(statusLabel(o.status))}<br>Notes : ${esc(o.notes||'—')}</p><p class="muted">Merci pour votre confiance.</p><script>window.onload=()=>window.print()<\/script></body></html>`;
+ const content=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Commande ${esc(orderReference(o))}</title><style>body{font:14px Arial,sans-serif;color:#28202a;margin:36px}h1{color:#7b173c;margin-bottom:4px}.muted{color:#766b73}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}th{background:#f8eef2}.totals{margin-left:auto;width:300px}.totals div{display:flex;justify-content:space-between;padding:6px}.grand{font-size:19px;font-weight:bold;border-top:2px solid #7b173c;margin-top:8px;padding-top:12px}.contact{margin-top:28px;white-space:pre-line}@media print{button{display:none}}</style></head><body><h1>Rmi-Dist</h1><div class="muted">Bon de commande</div><h2>${esc(orderReference(o))}</h2><p>Date : ${esc(o.created_at?new Date(o.created_at).toLocaleString('fr-MA'):'—')}</p><h3>Informations client</h3><p>${esc(o.customer_name||'Client')}<br>${esc(o.phone||'')}<br>${esc(o.email||'')}<br>${esc(o.address||'')} ${esc(o.city||'')}</p><h3>Articles commandés</h3><table><thead><tr><th>Produit</th><th>Qté</th><th>Prix unitaire</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table><div class="totals"><div><span>Sous-total</span><b>${money(o.subtotal_before_discount??o.subtotal??o.total)}</b></div><div><span>Remise</span><b>− ${money(o.discount_amount||0)}</b></div><div class="grand"><span>Total à payer</span><span>${money(o.total)}</span></div></div><p class="contact">Paiement : ${esc(o.payment_method||'—')}<br>Statut : ${esc(statusLabel(o.status))}<br>Notes : ${esc(o.notes||'—')}</p><p class="muted">Merci pour votre confiance.</p><script>window.onload=()=>window.print()<\/script></body></html>`;
  w.document.open();w.document.write(content);w.document.close();
 }
 function customerTableRow(c){return `<tr><td><b>${esc(c.full_name||'Client')}</b></td><td>${esc(c.phone||'')}<small>${esc(c.email||'')}</small></td><td>${esc(c.city||'')}</td><td>${Number(c.order_count||0)}</td><td><b>${money(c.total_spent)}</b></td><td>${c.last_order_at?new Date(c.last_order_at).toLocaleDateString('fr-MA'):'—'}</td></tr>`}
@@ -281,7 +295,7 @@ document.addEventListener("click",async e=>{
  const printBtn=e.target.closest('[data-print-order]');
  if(printBtn){const order=adminOrders.find(o=>String(o.id)===printBtn.dataset.printOrder);if(order)printOrder(order);return}
  const emailBtn=e.target.closest('[data-email-order]');
- if(emailBtn){const order=adminOrders.find(o=>String(o.id)===emailBtn.dataset.emailOrder);if(order){if(!order.email){toast("Aucune adresse e-mail n'est enregistrée pour ce client.");return}const subject=encodeURIComponent(`ParaRmi-Dist — commande ${orderReference(order)}`);const body=encodeURIComponent(orderShareText(order));window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(order.email)}&su=${subject}&body=${body}`,'_blank','noopener')}return}
+ if(emailBtn){const order=adminOrders.find(o=>String(o.id)===emailBtn.dataset.emailOrder);if(order){if(!order.email){toast("Aucune adresse e-mail n'est enregistrée pour ce client.");return}const subject=encodeURIComponent(`Rmi-Dist — commande ${orderReference(order)}`);const body=encodeURIComponent(orderShareText(order));window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(order.email)}&su=${subject}&body=${body}`,'_blank','noopener')}return}
  const whatsappBtn=e.target.closest('[data-whatsapp-order]');
  if(whatsappBtn){const order=adminOrders.find(o=>String(o.id)===whatsappBtn.dataset.whatsappOrder);if(order){const phone=normalizedWhatsAppNumber(order.phone);if(!phone){toast("Aucun numéro de téléphone valide n'est enregistré.");return}window.open(`https://wa.me/${phone}?text=${encodeURIComponent(orderShareText(order))}`,'_blank','noopener')}return}
  const template=e.target.closest('#csv-template');if(template){downloadProductCSVTemplate();return}
