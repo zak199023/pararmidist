@@ -2,16 +2,79 @@
 const CONFIG = { supabaseUrl: "https://hzosrdvaajjfenbzjxhg.supabase.co", supabaseAnonKey: "sb_publishable_AF7DhI63sGlRQXtnGZ3l-w_9EBLu1yQ", whatsapp: "212660622369" };
 const money = n => new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(Number(n||0));
 const $ = s => document.querySelector(s);
-let db = null, products = [], cart = JSON.parse(localStorage.getItem("prd-cart")||"[]"), isAdmin = false;
+let db = null, products = [], categories = [], subcategories = [], cart = JSON.parse(localStorage.getItem("prd-cart")||"[]"), isAdmin = false;
+let wishlist = new Set();
+try { wishlist = new Set(JSON.parse(localStorage.getItem("rmi-dist-wishlist")||"[]").map(String)); } catch { wishlist = new Set(); }
+function toggleWishlist(id){const key=String(id);if(wishlist.has(key))wishlist.delete(key);else wishlist.add(key);localStorage.setItem("rmi-dist-wishlist",JSON.stringify([...wishlist]));}
 let promoConfig = {active:false, discount_rate:5, starts_at:null, ends_at:null};
 let promoConfigLoaded = false;
 let adminOrders = [], adminProducts = [], adminCustomers = [], adminPromo = null, adminPromoError = null, adminTab = "overview";
 let csvImportRows = [], csvImportFileName = "", csvValidationErrors = [];
+const CATEGORY_CARDS = [
+ {name:"Cosmétiques & Beauté",sprite:1},
+ {name:"Soins dermatologiques",sprite:2},
+ {name:"Parapharmacie",sprite:3},
+ {name:"Produits Maman & Bébé",sprite:4},
+ {name:"Bien-être",sprite:5},
+ {name:"Produits Naturels",sprite:6},
+ {name:"Promotions",sprite:7,promotions:true},
+ {name:"Soins Capillaires",sprite:8}
+];
+const normalizeLabel = value => String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase();
+const categoryByName = name => categories.find(c=>categoryNameMatches(c.name,name));
+const CATEGORY_ALIASES = {
+ "Produits Maman & Bébé":["Bébé & Maman","Maman & Bébé"],
+ "Produits Naturels":["Produits naturels"],
+ "Soins Capillaires":["Soins capillaires"]
+};
+const categoryNameMatches = (actual, expected) => normalizeLabel(actual)===normalizeLabel(expected)||(CATEGORY_ALIASES[expected]||[]).some(x=>normalizeLabel(x)===normalizeLabel(actual));
+const subcategoryById = id => subcategories.find(x=>String(x.id)===String(id));
+async function loadTaxonomy(){
+ const fallback=CATEGORY_CARDS.filter(x=>!x.promotions).map(x=>({id:null,name:x.name}));
+ if(db){
+  const [catRes,subRes]=await Promise.all([
+   db.from("categories").select("id,name,slug").order("name"),
+   db.from("subcategories").select("id,name,category_id,slug").order("name")
+  ]);
+  if(!catRes.error&&Array.isArray(catRes.data))categories=catRes.data;
+  else{console.warn("Catégories non chargées :",catRes.error?.message);categories=fallback}
+  if(!subRes.error&&Array.isArray(subRes.data))subcategories=subRes.data;
+  else{console.warn("Sous-catégories non chargées :",subRes.error?.message);subcategories=[]}
+ }else{categories=fallback;subcategories=[]}
+ renderCategoryCards();renderCategoryFilters();
+}
+function renderCategoryCards(){
+ const host=$("#category-grid");if(!host)return;
+ host.innerHTML=CATEGORY_CARDS.map(item=>{
+  const dbCat=item.promotions?null:categoryByName(item.name);
+  const value=item.promotions?"__promotions__":(dbCat?.id||item.name);
+  return `<button type="button" class="category-card" data-category="${esc(value)}" aria-label="Voir ${esc(item.name)}"><span class="category-art category-sprite sprite-${item.sprite}" aria-hidden="true"></span><b>${esc(item.name)} <i aria-hidden="true">→</i></b></button>`;
+ }).join("");
+}
+function renderCategoryFilters(){
+ const select=$("#category-filter");if(!select)return;
+ select.innerHTML='<option value="">Toutes les catégories</option>'+CATEGORY_CARDS.map(item=>{
+  const c=item.promotions?null:categoryByName(item.name),value=item.promotions?"__promotions__":(c?.id||item.name);
+  return `<option value="${esc(value)}">${esc(item.name)}</option>`;
+ }).join("");
+ updateSubcategoryOptions();
+}
+function updateSubcategoryOptions(){
+ const cat=$("#category-filter"),sub=$("#subcategory-filter"),filters=$("#shop-filters");
+ if(!cat||!sub)return;
+ const value=cat.value,record=categories.find(c=>String(c.id)===String(value));
+ const rows=record?subcategories.filter(x=>String(x.category_id)===String(record.id)):[];
+ const current=sub.value;
+ sub.innerHTML='<option value="">Toutes les sous-catégories</option>'+rows.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
+ sub.disabled=!rows.length;
+ if(rows.some(x=>String(x.id)===current))sub.value=current;
+ if(filters)filters.classList.toggle("is-visible",!!value);
+}
 const sample = [
  {id:"demo-1",name:"Sérum éclat visage",brand:"Sélection beauté",category:"Cosmétiques & Beauté",description:"Un essentiel pour compléter votre routine beauté.",price:189,promo_price:null,image_url:"",sku:"PRD-001",published:true},
  {id:"demo-2",name:"Crème hydratante",brand:"Soin quotidien",category:"Soins dermatologiques",description:"Une texture confortable pour le soin quotidien.",price:145,promo_price:129,image_url:"",sku:"PRD-002",published:true},
  {id:"demo-3",name:"Gel nettoyant doux",brand:"Hygiène",category:"Parapharmacie",description:"Un geste simple dans votre routine d'hygiène.",price:99,promo_price:null,image_url:"",sku:"PRD-003",published:true},
- {id:"demo-4",name:"Soin douceur bébé",brand:"Bébé & Maman",category:"Bébé & Maman",description:"Un produit douceur pour les petits moments.",price:119,promo_price:null,image_url:"",sku:"PRD-004",published:true}
+ {id:"demo-4",name:"Soin douceur bébé",brand:"Bébé & Maman",category:"Produits Maman & Bébé",description:"Un produit douceur pour les petits moments.",price:119,promo_price:null,image_url:"",sku:"PRD-004",published:true}
 ];
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2600)}
 function configured(){return !!(CONFIG.supabaseUrl&&CONFIG.supabaseAnonKey)}
@@ -22,30 +85,95 @@ function promoIsActive(){
  return (!promoConfig.starts_at||now>=new Date(promoConfig.starts_at).getTime())&&(!promoConfig.ends_at||now<=new Date(promoConfig.ends_at).getTime());
 }
 function priceInfo(p){
- const hasProductPromo=p.promo_price!==null&&p.promo_price!==undefined&&Number(p.promo_price)>0;
- const base=hasProductPromo?Number(p.promo_price):Number(p.price);
+ const base=Math.max(0,Number(p.price)||0);
+ const promoValue=Number(p.promo_price);
+ const hasProductPromo=p.promo_price!==null&&p.promo_price!==undefined&&Number.isFinite(promoValue)&&promoValue>0&&promoValue<base;
+ const discountedBase=hasProductPromo?promoValue:base;
  const rate=(!hasProductPromo&&promoIsActive())?Number(promoConfig.discount_rate||5):0;
- const final=Math.round((base*(1-rate/100)+Number.EPSILON)*100)/100;
- return {base,final,rate,hasProductPromo,compareAt:Number(p.price),saving:Math.round((base-final+Number.EPSILON)*100)/100};
+ const final=Math.round((discountedBase*(1-rate/100)+Number.EPSILON)*100)/100;
+ return {base,final,rate,hasProductPromo,compareAt:base,saving:Math.round((base-final+Number.EPSILON)*100)/100};
 }
 async function loadPromoConfig(){
  if(!db)return;
  const {data,error}=await db.from("promotion_settings").select("active,discount_rate,starts_at,ends_at").eq("id",1).maybeSingle();
  if(!error&&data){promoConfig=data;promoConfigLoaded=true}else{promoConfig={active:false,discount_rate:5,starts_at:null,ends_at:null};promoConfigLoaded=false;if(error)console.warn("Paramètres promotionnels non chargés :",error.message)}
+ renderHomePanels();
 }
 async function loadProducts(){
  if(db){const {data,error}=await db.from("products").select("*").eq("published",true).order("created_at",{ascending:false});if(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}else products=data||[]}
  else products=sample;
  renderProducts();
 }
+function productCardHtml(p){
+ const pi=priceInfo(p),categoryName=categories.find(c=>String(c.id)===String(p.category_id))?.name||p.category||"",subcategoryName=subcategoryById(p.subcategory_id)?.name||p.subcategory||"";
+ const salePct=pi.compareAt>pi.final?Math.round((1-pi.final/pi.compareAt)*100):0,rating=Number(p.rating),hasRating=Number.isFinite(rating)&&rating>0;
+ const stars=hasRating?Array.from({length:5},(_,i)=>i<Math.round(rating)?"★":"☆").join(""):"",reviews=Number(p.review_count||p.reviews_count||0),favorite=wishlist.has(String(p.id));
+ const saleBadge=salePct?'<span class="product-sale-badge">-'+salePct+'%</span>':"";
+ const favButton='<button type="button" class="product-wishlist'+(favorite?" is-favorite":"")+'" data-wishlist="'+esc(p.id)+'" aria-label="'+(favorite?"Retirer des favoris":"Ajouter aux favoris")+'" aria-pressed="'+favorite+'">'+(favorite?"♥":"♡")+'</button>';
+ const image=p.image_url?'<img src="'+esc(p.image_url)+'" alt="'+esc(p.name)+'" loading="lazy">':'<div class="product-placeholder">✿</div>';
+ const ratingHtml=hasRating?'<div class="product-rating" aria-label="Note '+rating.toFixed(1)+' sur 5">'+stars+'<span>'+(reviews>0?"("+reviews+")":rating.toFixed(1))+'</span></div>':"";
+ const oldPrice=salePct?'<span class="old-price">'+money(pi.compareAt)+'</span>':"";
+ return '<article class="product-card">'+saleBadge+favButton+'<div class="product-image">'+image+'</div><div class="product-info"><div class="product-brand">'+esc(p.brand||"Rmi-Dist")+'</div><div class="product-name">'+esc(p.name)+'</div>'+ratingHtml+'<div class="product-meta">'+esc([categoryName,subcategoryName].filter(Boolean).join(" · "))+'</div><div class="product-buy"><div class="price">'+money(pi.final)+oldPrice+'</div><button class="mini-btn" data-add="'+esc(p.id)+'">🛒 Ajouter au panier</button></div></div></article>';
+}
 function renderProducts(){
- const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,sort=$("#sort").value;
- let list=products.filter(p=>{const matchesQuery=!q||[p.name,p.brand,p.category,p.sku].join(" ").toLowerCase().includes(q);const matchesCategory=!cat||(cat==="__promotions__"?(Number(p.promo_price)>0||(!p.promo_price&&promoIsActive())):p.category===cat);return matchesQuery&&matchesCategory});
+ const q=normalizeLabel($("#search")?.value||""),cat=$("#category-filter")?.value||"",sub=$("#subcategory-filter")?.value||"",sort=$("#sort")?.value||"featured";
+ const selectedCategory=categories.find(c=>String(c.id)===String(cat))||null;
+ const selectedName=selectedCategory?.name||(cat&&!cat.startsWith("__")?cat:"");
+ const selectedSubcategory=subcategoryById(sub);
+ let list=products.filter(p=>{
+  const productCategory=categories.find(c=>String(c.id)===String(p.category_id))?.name||p.category||"";
+  const productSubcategory=subcategoryById(p.subcategory_id)?.name||p.subcategory||"";
+  const matchesQuery=!q||normalizeLabel([p.name,p.brand,productCategory,productSubcategory,p.sku].join(" ")).includes(q);
+  const matchesCategory=!cat||(cat==="__promotions__"?priceInfo(p).saving>0:(p.category_id?String(p.category_id)===String(cat):categoryNameMatches(productCategory,selectedName)));
+  const matchesSubcategory=!sub||(p.subcategory_id?String(p.subcategory_id)===String(sub):normalizeLabel(productSubcategory)===normalizeLabel(selectedSubcategory?.name||""));
+  return matchesQuery&&matchesCategory&&matchesSubcategory;
+ });
  if(sort==="price-asc")list.sort((a,b)=>priceInfo(a).final-priceInfo(b).final);
- if(sort==="price-desc")list.sort((a,b)=>priceInfo(b).final-priceInfo(a).final);
- if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name,"fr"));
- $("#product-total").textContent=`${list.length} produit(s)`;
- $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.base)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+ else if(sort==="price-desc")list.sort((a,b)=>priceInfo(b).final-priceInfo(a).final);
+ else if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name,"fr"));
+ else list.sort((a,b)=>Number(Number(b.promo_price)>0)-Number(Number(a.promo_price)>0)||new Date(b.created_at||0)-new Date(a.created_at||0));
+ const isDefault=!q&&!cat&&!sub;
+ if(isDefault)list=list.slice(0,15);
+ $("#product-total").textContent=isDefault?`${list.length} produits sélectionnés automatiquement`:`${list.length} produit(s)`;
+ $("#products").innerHTML=list.length?list.map(productCardHtml).join(""):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+ startFeaturedCarousel();renderHomePanels();
+}
+function startFeaturedCarousel(){
+ if(window.featuredProductsTimer){clearInterval(window.featuredProductsTimer);window.featuredProductsTimer=null}
+ const host=$("#products");
+ if(!host||host.querySelectorAll(".product-card").length<2)return;
+ if(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+ let paused=false;
+ host.onmouseenter=()=>{paused=true};
+ host.onmouseleave=()=>{paused=false};
+ host.onfocusin=()=>{paused=true};
+ host.onfocusout=()=>{paused=false};
+ host.ontouchstart=()=>{paused=true};
+ host.ontouchend=()=>{setTimeout(()=>{paused=false},3500)};
+ window.featuredProductsTimer=setInterval(()=>{
+  if(paused)return;
+  const first=host.querySelector(".product-card");
+  if(!first)return;
+  const gap=parseFloat(getComputedStyle(host).gap)||16;
+  const step=first.getBoundingClientRect().width+gap;
+  const atEnd=host.scrollLeft+host.clientWidth>=host.scrollWidth-10;
+  host.scrollTo({left:atEnd?0:host.scrollLeft+step,behavior:"smooth"});
+ },3800);
+}
+function renderHomePanels(){
+ const offerTitle=$("#offer-title"),offerDetail=$("#offer-detail"),offerCta=$("#offer-cta");
+ if(offerTitle){
+  const discounted=products.filter(p=>priceInfo(p).saving>0);
+  const bestDiscount=discounted.reduce((best,p)=>Math.max(best,Math.round((1-priceInfo(p).final/Math.max(1,priceInfo(p).compareAt))*100)),0);
+  if(promoIsActive()){offerTitle.textContent="Jusqu’à -"+Number(promoConfig.discount_rate||5)+" %";offerDetail.textContent="Remise active sur les produits éligibles.";offerCta.textContent="Profiter maintenant →"}
+  else if(discounted.length){offerTitle.textContent="Jusqu’à -"+bestDiscount+" %";offerDetail.textContent=discounted.length+" produits bénéficient actuellement d’un prix réduit.";offerCta.textContent="Voir les promotions →"}
+  else{offerTitle.textContent="Bientôt de nouvelles offres";offerDetail.textContent="Retrouvez ici les campagnes promotionnelles Rmi-Dist.";offerCta.textContent="Voir la boutique →"}
+ }
+ const host=$("#new-arrivals");
+ if(host){
+  const recent=products.slice(0,3);
+  host.innerHTML=recent.length?recent.map(p=>{const pi=priceInfo(p);return '<article class="arrival-product">'+(p.image_url?'<img src="'+esc(p.image_url)+'" alt="'+esc(p.name)+'" loading="lazy">':'<span aria-hidden="true">✿</span>')+'<div><b>'+esc(p.name)+'</b><small>'+money(pi.final)+'</small></div></article>'}).join(""):'<span class="muted">Les nouveautés seront affichées ici dès leur publication.</span>';
+ }
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function saveCart(){localStorage.setItem("prd-cart",JSON.stringify(cart));renderCart()}
@@ -78,7 +206,7 @@ function showOrderConfirmation(order,reference){
  const waText="Bonjour Rmi-Dist, je viens de passer la commande "+reference+". Pouvez-vous me confirmer sa prise en charge ?";
  const el=document.createElement("section");el.id="order-success-modal";el.className="order-success-modal";
  el.setAttribute("role","dialog");el.setAttribute("aria-modal","true");el.setAttribute("aria-labelledby","order-success-title");
- el.innerHTML="<div class=\"order-success-card\"><button type=\"button\" class=\"close-btn order-success-close\" aria-label=\"Fermer\">×</button><div class=\"order-success-mark\">✓</div><p class=\"eyebrow\">RMI-DIST</p><h2 id=\"order-success-title\">Merci pour votre commande !</h2><p>Votre commande <b>"+esc(reference)+"</b> a bien été enregistrée.</p><p class=\"order-success-total\">Total des produits : <b>"+money(order.total)+"</b></p><p class=\"order-success-note\">Notre équipe vous contactera pour confirmer la livraison. Livraison gratuite à Casablanca ; pour les autres villes, les frais de transport seront confirmés par notre équipe.</p><a class=\"btn btn-dark full\" href=\"https://wa.me/"+CONFIG.whatsapp+"?text="+encodeURIComponent(waText)+"\" target=\"_blank\" rel=\"noopener noreferrer\">Contacter Rmi-Dist sur WhatsApp</a><button type=\"button\" class=\"btn btn-light full order-success-done\">Continuer mes achats</button></div>";
+ el.innerHTML="<div class=\"order-success-card\"><button type=\"button\" class=\"close-btn order-success-close\" aria-label=\"Fermer\">×</button><div class=\"order-success-mark\">✓</div><p class=\"eyebrow\">RMI-DIST</p><h2 id=\"order-success-title\">Merci pour votre commande !</h2><p>Votre commande <b>"+esc(reference)+"</b> a bien été enregistrée.</p><p class=\"order-success-total\">Sous-total : <b>"+money(order.subtotal_before_discount??order.subtotal??0)+"</b></p><p>Remise : <b>− "+money(order.discount_amount||0)+"</b></p><p>Livraison : <b>"+money(order.shipping_fee||0)+"</b></p><p>Total à payer : <b>"+money(order.total)+"</b></p><p class=\"order-success-note\">Notre équipe vous contactera pour confirmer la livraison. Livraison gratuite à Casablanca ; pour les autres villes, les frais de transport sont calculés selon le tarif configuré.</p><a class=\"btn btn-dark full\" href=\"https://wa.me/"+CONFIG.whatsapp+"?text="+encodeURIComponent(waText)+"\" target=\"_blank\" rel=\"noopener noreferrer\">Contacter Rmi-Dist sur WhatsApp</a><button type=\"button\" class=\"btn btn-light full order-success-done\">Continuer mes achats</button></div>";
  document.body.appendChild(el);
  const close=()=>el.remove();el.querySelector(".order-success-close").onclick=close;el.querySelector(".order-success-done").onclick=close;
  el.addEventListener("click",e=>{if(e.target===el)close()});
@@ -90,7 +218,7 @@ async function submitOrder(){
  const items=cart.map(x=>({product_id:x.id,quantity:Number(x.qty)}));
  const btn=$("#place-order");btn.disabled=true;btn.textContent="Enregistrement…";
  try{
-  const {data,error}=await db.functions.invoke("create-order",{body:{customer,items}});
+  const {data,error}=await db.functions.invoke("bright-function",{body:{customer,items}});
   if(error)throw error;
   const o=data?.order;
   if(!o?.id)throw new Error(data?.error||"Le serveur n’a pas confirmé l’enregistrement de la commande.");
@@ -142,7 +270,7 @@ function adminLogin(){
  else $("#admin-login").onclick=async()=>{const {data,error}=await db.auth.signInWithPassword({email:$("#admin-email").value,password:$("#admin-password").value});if(error){toast("Connexion refusée : "+error.message);return}const {data:profile}=await db.from("profiles").select("role").eq("id",data.user.id).single();if(profile?.role!=="admin"){await db.auth.signOut();toast("Ce compte n'a pas le rôle administrateur.");return}isAdmin=true;adminDashboard()};
 }
 
-const ADMIN_CATEGORIES=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Bébé & Maman","Bien-être","Soins capillaires","Produits naturels"];
+const ADMIN_CATEGORIES=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Produits Maman & Bébé","Bien-être","Produits Naturels","Soins Capillaires"];
 const ORDER_STATUSES=["pending","confirmed","preparing","shipped","delivered","cancelled"];
 const statusLabel=s=>({pending:"En attente",confirmed:"Confirmée",preparing:"En préparation",shipped:"Expédiée",delivered:"Livrée",cancelled:"Annulée"}[s]||s||"—");
 function adminDashboard(){
@@ -181,17 +309,23 @@ function parseCSV(text){
  return rows.map((r,index)=>{const o={_line:index+2};headers.forEach((h,i)=>o[h]=(r[i]??'').trim());return o});
 }
 function csvCell(v){const s=String(v??'');return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
-function downloadProductCSVTemplate(){const content='sku;name;brand;category;description;price;promo_price;image_url;published\r\nPRD-1001;Crème hydratante;Nivea;Cosmétiques & Beauté;Crème visage;85;75;;true\r\n';const blob=new Blob(['\uFEFF',content],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='modele-produits-pararmidist.csv';a.click();URL.revokeObjectURL(url)}
+function downloadProductCSVTemplate(){const content='sku;name;brand;category;subcategory;description;price;promo_price;image_url;published\r\nPRD-1001;Crème hydratante;Nivea;Cosmétiques & Beauté;Maquillage;Crème visage;85;75;;true\r\n';const blob=new Blob(['\uFEFF',content],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='modele-produits-rmi-dist.csv';a.click();URL.revokeObjectURL(url)}
+
 function csvRowToProduct(r){
- const name=r.name||'',category=r.category||'',priceRaw=r.price??'';const price=Number(priceRaw);
- if(!name||!category||priceRaw===''||!Number.isFinite(price)||price<0)throw new Error('Nom, catégorie et prix valide sont obligatoires.');
- const out={name,category,price,updated_at:new Date().toISOString()};
+ const name=r.name||'',category=r.category||'',subcategory=r.subcategory||'',priceRaw=r.price??'';const price=Number(priceRaw);
+ if(!name||!category||!subcategory||priceRaw===''||!Number.isFinite(price)||price<0)throw new Error('Nom, catégorie, sous-catégorie et prix valide sont obligatoires.');
+ const matchedCategory=categoryByName(category);
+ if(categories.length&&!matchedCategory)throw new Error('Catégorie inconnue : '+category+'. Utilisez le nom exact affiché dans le site.');
+ const matchedSubcategory=subcategory?subcategories.find(x=>normalizeLabel(x.name)===normalizeLabel(subcategory)&&(!matchedCategory||String(x.category_id)===String(matchedCategory.id))):null;
+ if(!matchedSubcategory)throw new Error('Sous-catégorie inconnue ou non rattachée à '+category+' : '+subcategory+'.');
+ const out={name,category:matchedCategory?.name||category,category_id:matchedCategory?.id||null,subcategory_id:matchedSubcategory?.id||null,price,updated_at:new Date().toISOString()};
  for(const key of ['sku','brand','description','image_url'])if(r[key]!==undefined&&r[key]!== '')out[key]=r[key];
- if(r.promo_price!==undefined&&r.promo_price!==''){const promo=Number(r.promo_price);if(!Number.isFinite(promo)||promo<0||promo>=price)throw new Error('Prix promotionnel invalide.');out.promo_price=promo}else if(r.promo_price===''){};
+ if(r.promo_price!==undefined&&r.promo_price!==''){const promo=Number(r.promo_price);if(!Number.isFinite(promo)||promo<0||promo>=price)throw new Error('Prix promotionnel invalide.');out.promo_price=promo}
  // Le stock est volontairement ignoré : les ventes sont indépendantes de tout inventaire.
  if(r.published!==undefined&&r.published!==''){const v=r.published.toLowerCase();if(!['true','false','1','0','oui','non'].includes(v))throw new Error('published doit être true/false ou oui/non.');out.published=['true','1','oui'].includes(v)}
  return out;
 }
+
 function prepareCSVImport(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{try{const rows=parseCSV(String(reader.result||''));if(!rows.length)throw new Error('Le fichier CSV est vide.');const required=['name','category','price'];const headers=Object.keys(rows[0]||{});const missing=required.filter(k=>!headers.includes(k));if(missing.length)throw new Error('Colonnes obligatoires manquantes : '+missing.join(', '));const seen=new Set();let duplicate=0,valid=0,errors=[];const normalized=[];for(const r of rows){try{const product=csvRowToProduct(r);if(product.sku){const k=product.sku.toLowerCase();if(seen.has(k)){duplicate++;errors.push(`Ligne ${r._line} : SKU répété dans le fichier (${product.sku}).`);continue}seen.add(k)}normalized.push({...product,_line:r._line});valid++}catch(e){errors.push(`Ligne ${r._line} : ${e.message}`)}}resolve({rows:normalized,errors,duplicate,valid,total:rows.length})}catch(e){reject(e)}};reader.onerror=()=>reject(new Error('Lecture du fichier impossible.'));reader.readAsText(file,'UTF-8')})}
 async function runCSVImport(){
  if(!db||!isAdmin){toast('Connexion administrateur requise.');return}
@@ -223,10 +357,15 @@ function renderAdminTab(){
   host.innerHTML=`<div class="admin-section-head"><div><h4>Fichier clients</h4><p>Fiches reconstituées à partir des commandes existantes, comptes et invités confondus.</p></div><input id="customers-search" placeholder="Rechercher un client…"></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Client</th><th>Contact</th><th>Ville</th><th>Commandes</th><th>CA livré / payé</th><th>Dernière commande</th></tr></thead><tbody id="customers-table-body">${customers.map(customerTableRow).join('')||'<tr><td colspan="6">Aucun client identifié.</td></tr>'}</tbody></table></div><p class="admin-note">Les clients invités sont identifiés par leur téléphone. Les comptes authentifiés restent dans Supabase Authentication. Aucun compte client n'est créé automatiquement par ce tableau.</p>`;
   $("#customers-search").oninput=()=>{const q=$("#customers-search").value.toLowerCase();$("#customers-table-body").innerHTML=customers.filter(c=>[c.full_name,c.phone,c.email,c.city].join(' ').toLowerCase().includes(q)).map(customerTableRow).join('')};
  } else if(adminTab==='products'){
-  const opts=ADMIN_CATEGORIES.map(c=>`<option>${esc(c)}</option>`).join('');
-  host.innerHTML=`<div class="admin-section-head"><div><h4>Catalogue produits</h4><p>Vente directe : aucun stock n’est suivi ni contrôlé. Nom, catégorie et prix sont obligatoires.</p></div><span class="admin-count">${adminProducts.length} produits</span></div><section class="admin-card csv-import-card"><div class="admin-card-head"><h4>Importation massive CSV</h4><button type="button" id="csv-template" class="admin-edit">Télécharger le modèle CSV</button></div><p class="admin-note">Importez 1 000 produits ou plus. Colonnes utiles : name, category, price, promo_price, SKU, marque, description, image_url, published. Toute colonne stock éventuelle est ignorée. Séparateur ; ou , accepté. Traitement par lots de 100.</p><div class="csv-import-controls"><label>Choisir un fichier CSV<input type="file" id="csv-file" accept=".csv,text/csv"></label><label class="csv-update-option"><input type="checkbox" id="csv-update-existing"> Actualiser les produits existants si le SKU existe</label></div><div id="csv-preview" class="csv-preview" aria-live="polite">Aucun fichier sélectionné.</div><button type="button" class="btn btn-dark" id="csv-run" disabled>Confirmer l’importation</button></section><div class="admin-product-form"><label>Nom du produit<input id="p-name" placeholder="Nom du produit" required></label><label>Catégorie<select id="p-category">${opts}</select></label><label>Prix de vente (MAD)<input id="p-price" type="number" min="0.01" step="0.01" placeholder="129" required></label><label>Marque (facultatif)<input id="p-brand" placeholder="Marque"></label><label>Référence SKU (facultatif)<input id="p-sku" placeholder="Référence"></label><label>Prix promotionnel (facultatif)<input id="p-promo" type="number" min="0.01" step="0.01" placeholder="Vide si aucune promotion"></label><label>URL photo (facultatif)<input id="p-image" type="url" placeholder="https://…"></label><label class="wide">Description (facultatif)<textarea id="p-desc"></textarea></label><input id="p-id" type="hidden"><button class="btn btn-dark" id="p-save">Ajouter le produit</button><button class="btn btn-light" id="p-cancel-edit" type="button" hidden>Annuler</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Produit</th><th>Catégorie</th><th>Prix</th><th>Promotion</th><th>Publication</th><th></th></tr></thead><tbody>${adminProducts.map(p=>`<tr><td><b>${esc(p.name)}</b><small>${esc(p.sku||'Sans référence')}</small></td><td>${esc(p.category)}</td><td>${money(p.price)}</td><td>${p.promo_price?money(p.promo_price):'—'}</td><td>${p.published?'Publié':'Masqué'}</td><td><button class="admin-edit" data-edit-product="${esc(p.id)}">Modifier</button> <button class="admin-danger" data-delete="${esc(p.id)}">Supprimer</button></td></tr>`).join('')||'<tr><td colspan="6">Aucun produit.</td></tr>'}</tbody></table></div>`;
-  $("#p-save").onclick=saveAdminProduct;
-  $("#p-cancel-edit").onclick=()=>{["p-id","p-name","p-brand","p-sku","p-price","p-promo","p-image","p-desc"].forEach(id=>$("#"+id).value="");$("#p-save").textContent="Ajouter le produit";$("#p-cancel-edit").hidden=true};
+   const opts=CATEGORY_CARDS.filter(x=>!x.promotions).map(x=>{const c=categoryByName(x.name);return `<option value="${esc(c?.id||x.name)}">${esc(x.name)}</option>`}).join('');
+   const unlinkedCount=adminProducts.filter(p=>!p.category_id||!p.subcategory_id).length;
+   host.innerHTML=`<div class="admin-section-head"><div><h4>Catalogue produits</h4><p>Vente directe : aucun stock n’est suivi ni contrôlé. Nom, catégorie et prix sont obligatoires.</p></div><span class="admin-count">${adminProducts.length} produits · ${unlinkedCount} à rattacher</span></div><section class="admin-card csv-import-card"><div class="admin-card-head"><h4>Importation massive CSV</h4><button type="button" id="csv-template" class="admin-edit">Télécharger le modèle CSV</button></div><p class="admin-note">Importez 1 000 produits ou plus. Colonnes utiles : name, category, subcategory (facultative), price, promo_price, SKU, marque, description, image_url, published. Les noms de catégorie et sous-catégorie doivent correspondre exactement au catalogue Rmi-Dist. Toute colonne stock éventuelle est ignorée. Séparateur ; ou , accepté. Traitement par lots de 100.</p><div class="csv-import-controls"><label>Choisir un fichier CSV<input type="file" id="csv-file" accept=".csv,text/csv"></label><label class="csv-update-option"><input type="checkbox" id="csv-update-existing"> Actualiser les produits existants si le SKU existe</label></div><div id="csv-preview" class="csv-preview" aria-live="polite">Aucun fichier sélectionné.</div><button type="button" class="btn btn-dark" id="csv-run" disabled>Confirmer l’importation</button></section><div class="admin-product-form"><label>Nom du produit<input id="p-name" placeholder="Nom du produit" required></label><label>Catégorie<select id="p-category">${opts}</select></label><label>Sous-catégorie<select id="p-subcategory" required disabled><option value="">Choisir une sous-catégorie</option></select></label><label>Prix de vente (MAD)<input id="p-price" type="number" min="0.01" step="0.01" placeholder="129" required></label><label>Marque (facultatif)<input id="p-brand" placeholder="Marque"></label><label>Référence SKU (facultatif)<input id="p-sku" placeholder="Référence"></label><label>Prix promotionnel (facultatif)<input id="p-promo" type="number" min="0.01" step="0.01" placeholder="Vide si aucune promotion"></label><label>URL photo (facultatif)<input id="p-image" type="url" placeholder="https://…"></label><label class="wide">Description (facultatif)<textarea id="p-desc"></textarea></label><input id="p-id" type="hidden"><button class="btn btn-dark" id="p-save">Ajouter le produit</button><button class="btn btn-light" id="p-cancel-edit" type="button" hidden>Annuler</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Produit</th><th>Catégorie / sous-catégorie</th><th>Prix</th><th>Promotion</th><th>Publication</th><th></th></tr></thead><tbody>${adminProducts.map(p=>`<tr><td><b>${esc(p.name)}</b><small>${esc(p.sku||'Sans référence')}</small></td><td>${esc(categories.find(c=>String(c.id)===String(p.category_id))?.name||p.category||'—')}<small>${esc(subcategoryById(p.subcategory_id)?.name||'Sous-catégorie non renseignée')}</small></td><td>${money(p.price)}</td><td>${p.promo_price?money(p.promo_price):'—'}</td><td>${p.published?'Publié':'Masqué'}</td><td><button class="admin-edit" data-edit-product="${esc(p.id)}">Modifier</button> <button class="admin-danger" data-delete="${esc(p.id)}">Supprimer</button></td></tr>`).join('')||'<tr><td colspan="6">Aucun produit.</td></tr>'}</tbody></table></div>`;
+   const fillAdminSubcategories=(selected="")=>{const cat=categories.find(c=>String(c.id)===String($("#p-category").value));const rows=cat?subcategories.filter(x=>String(x.category_id)===String(cat.id)):[];$("#p-subcategory").innerHTML='<option value="">Sans sous-catégorie</option>'+rows.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');$("#p-subcategory").disabled=!rows.length;$("#p-subcategory").value=selected};
+   $("#p-category").onchange=()=>fillAdminSubcategories();
+   fillAdminSubcategories();
+   $("#p-save").onclick=saveAdminProduct;
+   $("#p-cancel-edit").onclick=()=>{["p-id","p-name","p-brand","p-sku","p-price","p-promo","p-image","p-desc"].forEach(id=>$("#"+id).value="");$("#p-subcategory").value="";$("#p-save").textContent="Ajouter le produit";$("#p-cancel-edit").hidden=true};
+
  } else if(adminTab==='promotion'){
   const pr=adminPromo||{active:true,discount_rate:5,starts_at:null,ends_at:null};
   host.innerHTML=`${adminPromoError?`<div class="admin-error">La table de campagne n’est pas disponible. Exécutez la migration 20261122_professional_commerce.sql dans Supabase. Détail : ${esc(adminPromoError)}</div>`:''}<div class="admin-card promotion-editor"><h4>Campagne Rmi-Dist</h4><p>La remise générale s'applique uniquement aux produits sans prix promotionnel. Un article déjà en promotion ne reçoit pas une deuxième réduction.</p><label class="admin-toggle"><input id="promo-active" type="checkbox" ${pr.active?'checked':''}> Campagne active</label><label>Taux de remise (%)<input id="promo-rate" type="number" min="0" max="90" step="0.5" value="${Number(pr.discount_rate||5)}"></label><div class="admin-form-grid"><label>Début de la campagne<input id="promo-start" type="datetime-local" value="${toLocalInput(pr.starts_at)}"></label><label>Fin de la campagne<input id="promo-end" type="datetime-local" value="${toLocalInput(pr.ends_at)}"></label></div><button class="btn btn-dark" id="promo-save">Enregistrer la campagne</button><p class="admin-note">Le serveur recalcule les prix et la remise au moment de la commande. Le montant envoyé par le navigateur n'est jamais considéré comme fiable.</p></div>`;
@@ -268,15 +407,20 @@ function customerTableRow(c){return `<tr><td><b>${esc(c.full_name||'Client')}</b
 function topProducts(orders){const map=new Map();orders.forEach(o=>(Array.isArray(o.items)?o.items:[]).forEach(i=>{const k=i.product_id||i.name;const x=map.get(k)||{name:i.name||'Produit',quantity:0,revenue:0};x.quantity+=Number(i.quantity||0);x.revenue+=Number(i.line_total??(Number(i.unit_price||0)*Number(i.quantity||0)));map.set(k,x)}));return [...map.values()].sort((a,b)=>b.quantity-a.quantity)}
 function renderReportHtml(orders){const paid=orders.filter(isRevenueOrder),revenue=paid.reduce((s,o)=>s+Number(o.total||0),0),discount=orders.reduce((s,o)=>s+Number(o.discount_amount||0),0),avg=paid.length?revenue/paid.length:0;return `<div class="admin-kpis"><article><span>CA livré / payé</span><b>${money(revenue)}</b></article><article><span>Commandes</span><b>${orders.length}</b></article><article><span>Panier moyen encaissé</span><b>${money(avg)}</b></article><article><span>Remises accordées</span><b>${money(discount)}</b></article></div><div class="admin-card"><h4>Produits les plus vendus</h4>${topProducts(orders.filter(isRevenueOrder)).slice(0,15).map(x=>`<div class="admin-ranking"><span>${esc(x.name)}</span><b>${x.quantity} unité(s)</b><strong>${money(x.revenue)}</strong></div>`).join('')||'<p class="admin-empty">Aucune vente sur cette période.</p>'}</div><p class="admin-note">Le chiffre d'affaires est fondé sur les commandes livrées ou payées. Les montants historiques antérieurs à la nouvelle migration ne contiendront pas de champ de remise séparé. La marge nette n'est pas calculée car les coûts d'achat ne sont pas encore enregistrés.</p>`}
 async function saveAdminProduct(){
- const name=$("#p-name").value.trim(),category=$("#p-category").value,price=Number($("#p-price").value),promoRaw=$("#p-promo").value.trim(),promo=promoRaw===''?null:Number(promoRaw);
- if(!name||!ADMIN_CATEGORIES.includes(category)||!Number.isFinite(price)||price<=0){toast('Nom, catégorie et prix valide sont obligatoires.');return}
+ const name=$("#p-name").value.trim(),categoryValue=$("#p-category").value,price=Number($("#p-price").value),promoRaw=$("#p-promo").value.trim(),promo=promoRaw===''?null:Number(promoRaw);
+ const categoryRecord=categories.find(c=>String(c.id)===String(categoryValue))||categoryByName(categoryValue);
+ const subcategoryValue=$("#p-subcategory").value,subcategoryRecord=subcategoryValue?subcategoryById(subcategoryValue):null;
+ if(!name||!categoryValue||!Number.isFinite(price)||price<=0){toast('Nom, catégorie et prix valide sont obligatoires.');return}
+ if(!subcategoryValue||!subcategoryRecord||String(subcategoryRecord.category_id)!==String(categoryRecord?.id)){toast('Choisissez une sous-catégorie appartenant à la catégorie sélectionnée.');return}
  if(promo!==null&&(!Number.isFinite(promo)||promo<=0||promo>=price)){toast('Le prix promotionnel doit être supérieur à 0 et inférieur au prix normal.');return}
  const productId=$("#p-id").value;
  const existing=productId?adminProducts.find(x=>String(x.id)===productId):null;
- const payload={name,category,price,brand:$("#p-brand").value.trim()||null,sku:$("#p-sku").value.trim()||null,promo_price:promo,image_url:$("#p-image").value.trim()||null,description:$("#p-desc").value.trim()||null,published:existing?existing.published:true};
+ const category=categoryRecord?.name||categoryValue;
+ const payload={name,category,category_id:categoryRecord?.id||null,subcategory_id:subcategoryRecord?.id||null,price,brand:$("#p-brand").value.trim()||null,sku:$("#p-sku").value.trim()||null,promo_price:promo,image_url:$("#p-image").value.trim()||null,description:$("#p-desc").value.trim()||null,published:existing?existing.published:true};
  const result=productId?await db.from('products').update(payload).eq('id',productId):await db.from('products').insert(payload);
  if(result.error){toast('Erreur : '+result.error.message);return}toast(productId?'Produit modifié.':'Produit ajouté.');await loadProducts();await loadAdminData();adminTab='products';renderAdminTab();
 }
+
 async function savePromotion(){
  const rate=Number($("#promo-rate").value),active=$("#promo-active").checked,start=$("#promo-start").value||null,end=$("#promo-end").value||null;
  if(!Number.isFinite(rate)||rate<0||rate>90){toast('Le taux doit être compris entre 0 et 90 %.');return}
@@ -292,6 +436,7 @@ document.addEventListener('change',async e=>{
 });
 document.addEventListener("click",async e=>{
  if(e.target.closest("#place-order")){await submitOrder();return}
+ const featuredScroll=e.target.closest("[data-featured-scroll]");if(featuredScroll){const host=$("#products");const card=host?.querySelector(".product-card");if(host&&card){const gap=parseFloat(getComputedStyle(host).gap)||12;host.scrollBy({left:Number(featuredScroll.dataset.featuredScroll)*(card.getBoundingClientRect().width+gap)*2,behavior:"smooth"})}return}
  const printBtn=e.target.closest('[data-print-order]');
  if(printBtn){const order=adminOrders.find(o=>String(o.id)===printBtn.dataset.printOrder);if(order)printOrder(order);return}
  const emailBtn=e.target.closest('[data-email-order]');
@@ -303,16 +448,32 @@ document.addEventListener("click",async e=>{
  const tab=e.target.closest('[data-admin-tab]');if(tab){adminTab=tab.dataset.adminTab;renderAdminTab();return}
  const jump=e.target.closest('[data-jump-tab]');if(jump){adminTab=jump.dataset.jumpTab;renderAdminTab();return}
  if(e.target.closest("#checkout-close")||e.target.id==="checkout-backdrop")checkoutModal(false);
+ const favorite=e.target.closest("[data-wishlist]");if(favorite){toggleWishlist(favorite.dataset.wishlist);renderProducts();return}
  const add=e.target.closest("[data-add]");if(add)addCart(add.dataset.add);
  const qty=e.target.closest("[data-qty]");if(qty){const l=cart.find(x=>x.id===qty.dataset.qty);if(l){l.qty+=Number(qty.dataset.delta);if(l.qty<=0)cart=cart.filter(x=>x.id!==l.id);saveCart()}}
  const rem=e.target.closest("[data-remove]");if(rem){cart=cart.filter(x=>x.id!==rem.dataset.remove);saveCart()}
- const edit=e.target.closest('[data-edit-product]');if(edit&&db&&isAdmin){const product=adminProducts.find(x=>String(x.id)===edit.dataset.editProduct);if(product){adminTab='products';renderAdminTab();$("#p-id").value=product.id;$("#p-name").value=product.name||'';$("#p-category").value=product.category||ADMIN_CATEGORIES[0];$("#p-price").value=product.price??'';$("#p-brand").value=product.brand||'';$("#p-sku").value=product.sku||'';$("#p-promo").value=product.promo_price??'';$("#p-image").value=product.image_url||'';$("#p-desc").value=product.description||'';$("#p-save").textContent='Enregistrer les modifications';$("#p-cancel-edit").hidden=false;$("#p-name").focus()}return}
+ const edit=e.target.closest('[data-edit-product]');if(edit&&db&&isAdmin){const product=adminProducts.find(x=>String(x.id)===edit.dataset.editProduct);if(product){adminTab='products';renderAdminTab();$("#p-id").value=product.id;$("#p-name").value=product.name||'';$("#p-category").value=product.category_id||categoryByName(product.category)?.id||product.category||"";$("#p-category").dispatchEvent(new Event("change"));$("#p-subcategory").value=product.subcategory_id||"";$("#p-price").value=product.price??'';$("#p-brand").value=product.brand||'';$("#p-sku").value=product.sku||'';$("#p-promo").value=product.promo_price??'';$("#p-image").value=product.image_url||'';$("#p-desc").value=product.description||'';$("#p-save").textContent='Enregistrer les modifications';$("#p-cancel-edit").hidden=false;$("#p-name").focus()}return}
  const del=e.target.closest("[data-delete]");if(del&&db&&isAdmin){if(confirm("Supprimer ce produit ?")){const {error}=await db.from("products").delete().eq("id",del.dataset.delete);if(error)toast(error.message);else{await loadProducts();await loadAdminData();adminTab="products";renderAdminTab();toast("Produit supprimé.")}}}
- const cat=e.target.closest("[data-category]");if(cat){$("#category-filter").value=cat.dataset.category;renderProducts();$("#boutique").scrollIntoView()}
+ const cat=e.target.closest("[data-category]");if(cat){const raw=cat.dataset.category,matched=categories.find(c=>String(c.id)===String(raw))||categoryByName(raw);$("#category-filter").value=raw==="__promotions__"?"__promotions__":(matched?.id||raw);updateSubcategoryOptions();renderProducts();$("#boutique").scrollIntoView()}
 });
-$("#search").addEventListener("input",renderProducts);$("#category-filter").addEventListener("change",renderProducts);$("#sort").addEventListener("change",renderProducts);
+$("#search").addEventListener("input",renderProducts);$("#search").addEventListener("keydown",e=>{if(e.key==="Enter")$("#boutique").scrollIntoView({behavior:"smooth"})});$("#category-filter").addEventListener("change",()=>{updateSubcategoryOptions();renderProducts()});$("#subcategory-filter").addEventListener("change",renderProducts);$("#sort").addEventListener("change",renderProducts);
+const promotionsNav=$("#main-nav [data-nav-promotions]");if(promotionsNav)promotionsNav.addEventListener("click",e=>{e.preventDefault();$("#category-filter").value="__promotions__";updateSubcategoryOptions();renderProducts();$("#boutique").scrollIntoView({behavior:"smooth"})});
 $("#cart-open").onclick=()=>drawer(true);$("#account-open").onclick=async()=>{await refreshAuth();$("#account-modal").classList.add("open");$("#account-backdrop").classList.add("open");accountPanel()};$("#account-backdrop").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#account-close").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#drawer-backdrop").onclick=()=>drawer(false);document.querySelectorAll("[data-close]").forEach(x=>x.onclick=()=>drawer(false));
 $("#checkout").onclick=startWebsiteOrder;$("#admin-open").onclick=()=>{modal(true);adminLogin()};$("#modal-backdrop").onclick=()=>modal(false);document.querySelectorAll("[data-modal-close]").forEach(x=>x.onclick=()=>modal(false));
 $("#menu-toggle").onclick=()=>$("#main-nav").classList.toggle("show");document.querySelectorAll("#main-nav a").forEach(a=>a.onclick=()=>$("#main-nav").classList.remove("show"));
-$("#year").textContent=new Date().getFullYear();loadProducts();renderCart();refreshAuth();if(db){loadPromoConfig().then(()=>{renderProducts();renderCart()});db.auth.onAuthStateChange(()=>refreshAuth())}
+$("#year").textContent=new Date().getFullYear();renderCart();refreshAuth();loadTaxonomy().catch(err=>{console.error("Chargement du catalogue impossible",err);renderCategoryCards();renderCategoryFilters()}).then(loadProducts);if(db){loadPromoConfig().then(()=>{renderProducts();renderCart()});db.auth.onAuthStateChange(()=>refreshAuth())}
 if(!configured())console.info("Mode aperçu local actif. Consultez README.md pour connecter Supabase.");
+
+
+/* Newsletter de la maquette : ouvre un message prérempli vers l'adresse officielle.
+   Le stockage automatique des abonnés nécessite ensuite un service newsletter dédié. */
+document.addEventListener("submit",e=>{
+ if(e.target?.id!=="newsletter-form")return;
+ e.preventDefault();
+ const email=$("#newsletter-email")?.value.trim();
+ if(!email)return;
+ const subject=encodeURIComponent("Inscription aux prochaines annonces Rmi-Dist");
+ const body=encodeURIComponent("Bonjour Rmi-Dist,\n\nJe souhaite recevoir vos prochaines annonces et nouveautés.\nMon adresse e-mail : "+email);
+ window.location.href="mailto:pararmidist@gmail.com?subject="+subject+"&body="+body;
+ toast("Votre application e-mail va s'ouvrir pour confirmer votre inscription.");
+});
