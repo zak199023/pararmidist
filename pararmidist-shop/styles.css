@@ -291,7 +291,7 @@ footer{background:#720021;color:#fff;padding:28px clamp(20px,7vw,110px) 16px}
 .featured-heading{display:flex;align-items:center;justify-content:center;gap:16px;margin:0 auto 8px;color:#b50948}
 .featured-heading h2{margin:0;font:700 clamp(24px,2.4vw,34px) "Playfair Display",serif;color:#a30942}
 .heading-flower{font-size:28px;color:#e32c77}
-.shop-tools{margin:0 8px 8px}.shop-filters{display:none}.shop-tools .muted{font-size:10px}
+.shop-tools{margin:0 8px 8px}.shop-filters{display:none}.shop-filters.is-visible{display:flex;flex-wrap:wrap}.shop-tools .muted{font-size:10px}
 .featured-wrap{position:relative;padding:0 22px}
 .product-grid{display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;padding:4px 2px 12px;scrollbar-width:none}
 .product-grid::-webkit-scrollbar{display:none}
@@ -341,3 +341,5 @@ footer{background:#720021;color:#fff;padding:28px clamp(20px,7vw,110px) 16px}
  .home-panels{grid-template-columns:1fr;padding:0 10px 18px;gap:9px}.home-panel{min-height:125px}.arrivals-panel{grid-column:auto}
 }
 @media(prefers-reduced-motion:reduce){.product-grid{scroll-behavior:auto}.category-card:hover{transform:none}}
+
+@media(max-width:700px){.shop-filters.is-visible{display:flex;flex-direction:column;width:100%}.shop-filters.is-visible select{width:100%}}
