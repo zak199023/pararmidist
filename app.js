@@ -45,7 +45,7 @@ function renderProducts(){
  if(sort==="price-desc")list.sort((a,b)=>priceInfo(b).final-priceInfo(a).final);
  if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name,"fr"));
  $("#product-total").textContent=`${list.length} produit(s)`;
- $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.base)} ${pi.hasProductPromo?'<span class="price-discount-note">−38%</span>':pi.rate?'<span class="price-discount-note">−5% au panier</span>':''} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+ $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.base)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function saveCart(){localStorage.setItem("prd-cart",JSON.stringify(cart));renderCart()}
@@ -73,6 +73,17 @@ function startWebsiteOrder(){
  const summary=$("#checkout-price-summary");if(summary)summary.innerHTML=`<div><span>Sous-total</span><b>${money(base)}</b></div>${discount?`<div><span>Remise Rmi-Dist</span><b>− ${money(discount)}</b></div>`:''}<div class="checkout-grand-total"><span>Total à payer</span><b>${money(total)}</b></div><small>La remise générale ne se cumule pas avec un prix déjà promotionnel. Le montant définitif est recalculé par notre serveur.</small>`;
  checkoutModal(true);
 }
+function showOrderConfirmation(order,reference){
+ const old=document.getElementById("order-success-modal");if(old)old.remove();
+ const waText="Bonjour Rmi-Dist, je viens de passer la commande "+reference+". Pouvez-vous me confirmer sa prise en charge ?";
+ const el=document.createElement("section");el.id="order-success-modal";el.className="order-success-modal";
+ el.setAttribute("role","dialog");el.setAttribute("aria-modal","true");el.setAttribute("aria-labelledby","order-success-title");
+ el.innerHTML="<div class=\"order-success-card\"><button type=\"button\" class=\"close-btn order-success-close\" aria-label=\"Fermer\">×</button><div class=\"order-success-mark\">✓</div><p class=\"eyebrow\">RMI-DIST</p><h2 id=\"order-success-title\">Merci pour votre commande !</h2><p>Votre commande <b>"+esc(reference)+"</b> a bien été enregistrée.</p><p class=\"order-success-total\">Total des produits : <b>"+money(order.total)+"</b></p><p class=\"order-success-note\">Notre équipe vous contactera pour confirmer la livraison. Livraison gratuite à Casablanca ; pour les autres villes, les frais de transport seront confirmés par notre équipe.</p><a class=\"btn btn-dark full\" href=\"https://wa.me/"+CONFIG.whatsapp+"?text="+encodeURIComponent(waText)+"\" target=\"_blank\" rel=\"noopener noreferrer\">Contacter Rmi-Dist sur WhatsApp</a><button type=\"button\" class=\"btn btn-light full order-success-done\">Continuer mes achats</button></div>";
+ document.body.appendChild(el);
+ const close=()=>el.remove();el.querySelector(".order-success-close").onclick=close;el.querySelector(".order-success-done").onclick=close;
+ el.addEventListener("click",e=>{if(e.target===el)close()});
+}
+
 async function submitOrder(){
  const form=$("#checkout-form");if(!form.reportValidity())return;
  const customer={customer_name:$("#c-name").value.trim(),phone:$("#c-phone").value.trim(),email:$("#c-email").value.trim(),city:$("#c-city").value.trim(),address:$("#c-address").value.trim(),notes:$("#c-notes").value.trim()};
@@ -81,9 +92,12 @@ async function submitOrder(){
  try{
   const {data,error}=await db.functions.invoke("create-order",{body:{customer,items}});
   if(error)throw error;
-  const o=data.order;
+  const o=data?.order;
+  if(!o?.id)throw new Error(data?.error||"Le serveur n’a pas confirmé l’enregistrement de la commande.");
   cart=[];saveCart();checkoutModal(false);drawer(false);
-  toast(`Merci ! Votre commande ${o.order_number||o.id} a bien été enregistrée.`);
+  const ref=o.order_number||String(o.id).slice(0,8).toUpperCase();
+  toast(`Merci ! Votre commande ${ref} a bien été enregistrée.`);
+  showOrderConfirmation(o,ref);
  }catch(err){console.error(err);toast("Commande non enregistrée : "+(err.message||"erreur Supabase."))}
  finally{btn.disabled=false;btn.textContent="Confirmer ma commande"}
 }
