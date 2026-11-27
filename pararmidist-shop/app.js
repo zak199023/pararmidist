@@ -190,7 +190,7 @@ function showOrderConfirmation(order,reference){
  const waText="Bonjour Rmi-Dist, je viens de passer la commande "+reference+". Pouvez-vous me confirmer sa prise en charge ?";
  const el=document.createElement("section");el.id="order-success-modal";el.className="order-success-modal";
  el.setAttribute("role","dialog");el.setAttribute("aria-modal","true");el.setAttribute("aria-labelledby","order-success-title");
- el.innerHTML="<div class=\"order-success-card\"><button type=\"button\" class=\"close-btn order-success-close\" aria-label=\"Fermer\">×</button><div class=\"order-success-mark\">✓</div><p class=\"eyebrow\">RMI-DIST</p><h2 id=\"order-success-title\">Merci pour votre commande !</h2><p>Votre commande <b>"+esc(reference)+"</b> a bien été enregistrée.</p><p class=\"order-success-total\">Total des produits : <b>"+money(order.total)+"</b></p><p class=\"order-success-note\">Notre équipe vous contactera pour confirmer la livraison. Livraison gratuite à Casablanca ; pour les autres villes, les frais de transport seront confirmés par notre équipe.</p><a class=\"btn btn-dark full\" href=\"https://wa.me/"+CONFIG.whatsapp+"?text="+encodeURIComponent(waText)+"\" target=\"_blank\" rel=\"noopener noreferrer\">Contacter Rmi-Dist sur WhatsApp</a><button type=\"button\" class=\"btn btn-light full order-success-done\">Continuer mes achats</button></div>";
+ el.innerHTML="<div class=\"order-success-card\"><button type=\"button\" class=\"close-btn order-success-close\" aria-label=\"Fermer\">×</button><div class=\"order-success-mark\">✓</div><p class=\"eyebrow\">RMI-DIST</p><h2 id=\"order-success-title\">Merci pour votre commande !</h2><p>Votre commande <b>"+esc(reference)+"</b> a bien été enregistrée.</p><p class=\"order-success-total\">Sous-total : <b>"+money(order.subtotal_before_discount??order.subtotal??0)+"</b></p><p>Remise : <b>− "+money(order.discount_amount||0)+"</b></p><p>Livraison : <b>"+money(order.shipping_fee||0)+"</b></p><p>Total à payer : <b>"+money(order.total)+"</b></p><p class=\"order-success-note\">Notre équipe vous contactera pour confirmer la livraison. Livraison gratuite à Casablanca ; pour les autres villes, les frais de transport sont calculés selon le tarif configuré.</p><a class=\"btn btn-dark full\" href=\"https://wa.me/"+CONFIG.whatsapp+"?text="+encodeURIComponent(waText)+"\" target=\"_blank\" rel=\"noopener noreferrer\">Contacter Rmi-Dist sur WhatsApp</a><button type=\"button\" class=\"btn btn-light full order-success-done\">Continuer mes achats</button></div>";
  document.body.appendChild(el);
  const close=()=>el.remove();el.querySelector(".order-success-close").onclick=close;el.querySelector(".order-success-done").onclick=close;
  el.addEventListener("click",e=>{if(e.target===el)close()});
@@ -202,7 +202,7 @@ async function submitOrder(){
  const items=cart.map(x=>({product_id:x.id,quantity:Number(x.qty)}));
  const btn=$("#place-order");btn.disabled=true;btn.textContent="Enregistrement…";
  try{
-  const {data,error}=await db.functions.invoke("create-order",{body:{customer,items}});
+  const {data,error}=await db.functions.invoke("bright-function",{body:{customer,items}});
   if(error)throw error;
   const o=data?.order;
   if(!o?.id)throw new Error(data?.error||"Le serveur n’a pas confirmé l’enregistrement de la commande.");
