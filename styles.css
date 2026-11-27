@@ -222,3 +222,14 @@ footer{background:#720021;color:#fff;padding:28px clamp(20px,7vw,110px) 16px}
 .category-emoji{display:grid;place-items:center;width:42%;font-size:clamp(38px,4vw,58px);line-height:1;filter:drop-shadow(0 4px 4px #9d335522)}
 @media(max-width:1050px){.category-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:700px){.category-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.category-emoji{width:40%;font-size:38px}}
+
+/* Confirmation de commande Rmi-Dist */
+.order-success-modal{position:fixed;inset:0;z-index:120;background:#2d0618a8;display:grid;place-items:center;padding:18px}
+.order-success-card{position:relative;width:min(100%,480px);padding:30px 26px;border:1px solid #efc3cf;border-radius:22px;background:linear-gradient(145deg,#fff,#fff1f5);box-shadow:0 22px 70px #35081745;text-align:center;color:#65001f}
+.order-success-card h2{font-family:"Playfair Display",serif;font-size:27px;margin:8px 0 12px}
+.order-success-card p{font-size:13px;line-height:1.65}
+.order-success-mark{width:58px;height:58px;margin:0 auto 12px;border-radius:50%;display:grid;place-items:center;background:#168c48;color:white;font-size:32px;font-weight:800}
+.order-success-total{padding:12px;border-radius:10px;background:#fff;font-size:15px!important}
+.order-success-note{color:#806b72;font-size:11px!important}
+.order-success-card .btn{margin-top:9px}
+.order-success-close{position:absolute;right:14px;top:8px}
