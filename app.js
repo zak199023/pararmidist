@@ -346,10 +346,9 @@ async function saveAdminProduct(){
  if(result.error){toast('Erreur : '+result.error.message);return}toast(productId?'Produit modifié.':'Produit ajouté.');await loadProducts();await loadAdminData();adminTab='products';renderAdminTab();
 }
 async function savePromotion(){
- const rate=Number($("#promo-rate").value),active=$("#promo-active").checked,start=$("#promo-start").value||null,end=$("#promo-end").value||null;
+ const rate=Number($("#promo-rate").value),active=$("#promo-active").checked;
  if(!Number.isFinite(rate)||rate<0||rate>90){toast('Le taux doit être compris entre 0 et 90 %.');return}
- if(start&&end&&new Date(end)<=new Date(start)){toast('La date de fin doit être après la date de début.');return}
- const payload={active,discount_rate:rate,starts_at:start?new Date(start).toISOString():null,ends_at:end?new Date(end).toISOString():null,updated_at:new Date().toISOString()};
+ const payload={active,discount_rate:rate,updated_at:new Date().toISOString()};
  const {error}=await db.from('promotion_settings').upsert({id:1,...payload});if(error){toast('Impossible d’enregistrer la campagne : '+error.message);return}
  toast('Campagne enregistrée.');await loadPromoConfig();await loadAdminData();adminTab='promotion';renderAdminTab();renderCart();renderProducts();
 }
