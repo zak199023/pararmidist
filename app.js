@@ -438,6 +438,12 @@ async function saveAdminProduct(){
  if(promo!==null&&(!Number.isFinite(promo)||promo<=0||promo>=price)){toast('Le prix promotionnel doit être supérieur à 0 et inférieur au prix normal.');return}
  const productId=$("#p-id").value;
  const existing=productId?adminProducts.find(x=>String(x.id)===productId):null;
+ const skuValue=$("#p-sku").value.trim();
+ if(skuValue){
+  const normalizedSku=skuValue.toLocaleLowerCase();
+  const duplicateSku=adminProducts.find(x=>String(x.sku||"").trim().toLocaleLowerCase()===normalizedSku&&String(x.id)!==String(productId||""));
+  if(duplicateSku){toast("Cette référence SKU est déjà utilisée par le produit « "+duplicateSku.name+" ». Choisissez une référence différente.");return}
+ }
  if(productId&&!existing){toast("Produit introuvable dans le catalogue chargé. Rechargez la liste avant de modifier.");return}
  const stock=Number($("#p-stock").value);
  if(!productId&&(!Number.isInteger(stock)||stock<0)){toast("Le stock initial doit être un nombre entier positif ou nul.");return}
