@@ -12,7 +12,14 @@ const APPROVED_SUBCATEGORIES = {
  "Soins dermatologiques":["Acné","Cicatrices","Cicatrices & brûlures","Dépigmentation","Eczéma & peau sensible"]
 };
 const $ = s => document.querySelector(s);
-let db = null, products = [], cart = JSON.parse(localStorage.getItem("prd-cart")||"[]"), isAdmin = false;
+function loadSavedCart(){
+ try{
+  const saved=JSON.parse(localStorage.getItem("prd-cart")||"[]");
+  if(!Array.isArray(saved))return [];
+  return saved.filter(x=>x&&typeof x.id==="string"&&Number.isInteger(Number(x.qty))&&Number(x.qty)>0).map(x=>({id:x.id,qty:Number(x.qty)}));
+ }catch(error){console.warn("Panier local illisible :",error);return []}
+}
+let db = null, products = [], cart = loadSavedCart(), isAdmin = false;
 let categories = [], subcategories = [], shippingRates = [];
 let adminStockMovements = [], adminReturns = [], adminExchanges = [], adminLosses = [];
 let promoConfig = {active:false, discount_rate:5, starts_at:null, ends_at:null};
@@ -127,7 +134,7 @@ function renderProducts(){
  }).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-function saveCart(){localStorage.setItem("prd-cart",JSON.stringify(cart));renderCart()}
+function saveCart(){try{localStorage.setItem("prd-cart",JSON.stringify(cart))}catch(error){console.warn("Panier non sauvegardé sur cet appareil :",error);toast("Le panier reste disponible pendant cette session, mais ne peut pas être sauvegardé sur cet appareil.")}renderCart()}
 function addCart(id){const p=products.find(x=>x.id===id);if(!p)return;const stock=Number(p.stock||0);if(stock<=0){toast("Ce produit est momentanément indisponible.");return}const line=cart.find(x=>x.id===id);if(line){if(line.qty>=stock){toast("La quantité demandée dépasse le stock disponible.");return}line.qty++}else cart.push({id,qty:1});saveCart();toast("Produit ajouté au panier.")}
 function renderCart(){
  const count=cart.reduce((s,x)=>s+x.qty,0);$("#cart-count").textContent=count;
