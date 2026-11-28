@@ -292,6 +292,7 @@ async function loadAdminData(){
 function isRevenueOrder(o){return o.status==='delivered'||o.payment_status==='paid'}
 function orderDate(o){return new Date(o.created_at||Date.now())}
 function customerRows(){return adminCustomers}
+function localDateString(date){const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,"0"),d=String(date.getDate()).padStart(2,"0");return `${y}-${m}-${d}`}
 function dateWithinReportRange(value,from,to){const d=new Date(value);if(!Number.isFinite(d.getTime()))return false;const start=from?new Date(from+"T00:00:00"):null,end=to?new Date(to+"T00:00:00"):null;if(end)end.setDate(end.getDate()+1);return (!start||d>=start)&&(!end||d<end)}
 function filteredOrders(){const from=$("#report-from")?.value,to=$("#report-to")?.value;return adminOrders.filter(o=>dateWithinReportRange(orderDate(o),from,to))}
 function parseCSV(text){
@@ -377,7 +378,7 @@ function renderAdminTab(){
  } else if(adminTab==='reports'){
   host.innerHTML=`<div class="admin-section-head"><div><h4>Rapports commerciaux</h4><p>Choisissez une période pour analyser les commandes et les ventes.</p></div><button class="btn btn-light" id="report-print">Imprimer / Enregistrer en PDF</button></div><div class="report-filters"><button class="btn btn-light" data-report-preset="day">Aujourd’hui</button><button class="btn btn-light" data-report-preset="month">Ce mois</button><button class="btn btn-light" data-report-preset="year">Cette année</button><label>Du<input id="report-from" type="date"></label><label>Au<input id="report-to" type="date"></label><button class="btn btn-dark" id="report-apply">Appliquer</button></div><div id="report-result">${renderReportHtml(adminOrders)}</div>`;
   $("#report-apply").onclick=()=>{$("#report-result").innerHTML=renderReportHtml(filteredOrders())};
-  document.querySelectorAll("[data-report-preset]").forEach(btn=>btn.onclick=()=>{const now=new Date(),d=new Date(now);if(btn.dataset.reportPreset==="day"){d.setHours(0,0,0,0);$("#report-from").value=d.toISOString().slice(0,10);$("#report-to").value=$("#report-from").value}else if(btn.dataset.reportPreset==="month"){d.setDate(1);$("#report-from").value=d.toISOString().slice(0,10);$("#report-to").value=now.toISOString().slice(0,10)}else{d.setMonth(0,1);$("#report-from").value=d.toISOString().slice(0,10);$("#report-to").value=now.toISOString().slice(0,10)}$("#report-result").innerHTML=renderReportHtml(filteredOrders())});
+  document.querySelectorAll("[data-report-preset]").forEach(btn=>btn.onclick=()=>{const now=new Date(),d=new Date(now);if(btn.dataset.reportPreset==="day"){d.setHours(0,0,0,0);$("#report-from").value=localDateString(d);$("#report-to").value=$("#report-from").value}else if(btn.dataset.reportPreset==="month"){d.setDate(1);$("#report-from").value=localDateString(d);$("#report-to").value=localDateString(now)}else{d.setMonth(0,1);$("#report-from").value=localDateString(d);$("#report-to").value=localDateString(now)}$("#report-result").innerHTML=renderReportHtml(filteredOrders())});
   $("#report-print").onclick=()=>window.print();
  }
 }
