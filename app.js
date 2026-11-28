@@ -235,7 +235,7 @@ async function loadAdminData(){
 }
 function isRevenueOrder(o){return o.status==='delivered'||o.payment_status==='paid'}
 function orderDate(o){return new Date(o.created_at||Date.now())}
-function customerRows(){const map=new Map();adminOrders.forEach(o=>{const key=(o.phone||o.email||o.customer_name||"client").toLowerCase();const c=map.get(key)||{full_name:o.customer_name||"Client",phone:o.phone||"",email:o.email||"",city:o.city||"",order_count:0,total_spent:0,last_order_at:o.created_at};c.order_count++;if(isRevenueOrder(o))c.total_spent+=Number(o.total||0);if(new Date(o.created_at)>new Date(c.last_order_at||0))c.last_order_at=o.created_at;map.set(key,c)});return [...map.values()}
+function customerRows(){const map=new Map();adminOrders.forEach(o=>{const key=(o.phone||o.email||o.customer_name||"client").toLowerCase();const c=map.get(key)||{full_name:o.customer_name||"Client",phone:o.phone||"",email:o.email||"",city:o.city||"",order_count:0,total_spent:0,last_order_at:o.created_at};c.order_count++;if(isRevenueOrder(o))c.total_spent+=Number(o.total||0);if(new Date(o.created_at)>new Date(c.last_order_at||0))c.last_order_at=o.created_at;map.set(key,c)});return [...map.values()]}
 function filteredOrders(){const from=$("#report-from")?.value,to=$("#report-to")?.value;return adminOrders.filter(o=>{const d=orderDate(o);return (!from||d>=new Date(from+'T00:00:00'))&&(!to||d<=new Date(to+'T23:59:59'))})}
 function parseCSV(text){
  const first=(text.split(/\r?\n/,1)[0]||"");
