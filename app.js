@@ -325,11 +325,11 @@ function downloadProductCSVTemplate(){const content='sku;name;brand;category;des
 function csvRowToProduct(r){
  const name=r.name||'',categoryRaw=r.category||'',priceRaw=r.price??'';const price=Number(priceRaw);
  const mainCategory=categories.find(c=>normalizeText(c.name)===normalizeText(categoryRaw));
- if(!name||!mainCategory||priceRaw===''||!Number.isFinite(price)||price<0)throw new Error('Nom, catégorie principale valide et prix sont obligatoires.');
+ if(!name||!mainCategory||priceRaw===''||!Number.isFinite(price)||price<=0)throw new Error('Nom, catégorie principale valide et prix sont obligatoires.');
  const out={name,category:mainCategory.name,category_id:mainCategory.id,price,updated_at:new Date().toISOString()};
  if(r.subcategory){const sub=subcategories.find(c=>normalizeText(c.name)===normalizeText(r.subcategory)&&String(c.category_id)===String(mainCategory.id));if(!sub)throw new Error('Sous-catégorie inconnue pour cette catégorie principale.');out.subcategory_id=sub.id}
- for(const key of ['sku','brand','description','image_url'])if(r[key]!==undefined&&r[key]!== '')out[key]=r[key];
- if(Object.prototype.hasOwnProperty.call(r,'promo_price')){if(r.promo_price==='')out.promo_price=null;else{const promo=Number(r.promo_price);if(!Number.isFinite(promo)||promo<0||promo>=price)throw new Error('Prix promotionnel invalide.');out.promo_price=promo}}
+ for(const key of ['sku','brand','description','image_url'])if(r[key]!==undefined&&r[key]!== '')out[key]=String(r[key]).trim();
+ if(Object.prototype.hasOwnProperty.call(r,'promo_price')){if(r.promo_price==='')out.promo_price=null;else{const promo=Number(r.promo_price);if(!Number.isFinite(promo)||promo<=0||promo>=price)throw new Error('Prix promotionnel invalide.');out.promo_price=promo}}
  // Le stock est volontairement ignoré : les ventes sont indépendantes de tout inventaire.
  if(r.published!==undefined&&r.published!==''){const v=r.published.toLowerCase();if(!['true','false','1','0','oui','non'].includes(v))throw new Error('published doit être true/false ou oui/non.');out.published=['true','1','oui'].includes(v)}
  return out;
