@@ -70,10 +70,13 @@ async function fetchAllProducts(publishedOnly=false){
  return rows;
 }
 function shippingFeeForCity(city){
- const normalized=normalizeText(city);
+ const normalized=normalizeText(city).replace(/\\s+/g," ");
+ if(!normalized)return null;
  if(normalized==="casablanca")return 0;
- const rate=shippingRates.find(r=>normalizeText(r.city)===normalized&&r.is_active);
- return rate?Number(rate.shipping_fee):null;
+ const matches=shippingRates.filter(r=>normalizeText(r.city).replace(/\\s+/g," ")===normalized&&r.is_active===true);
+ if(matches.length!==1)return null;
+ const fee=Number(matches[0].shipping_fee);
+ return Number.isFinite(fee)&&fee>=0?fee:null;
 }
 async function loadCommerceMetadata(){
  if(!db)return;
@@ -87,7 +90,7 @@ async function loadCommerceMetadata(){
   const parent=categories.find(c=>String(c.id)===String(sc.category_id));
   return !!parent&&(APPROVED_SUBCATEGORIES[parent.name]||[]).includes(sc.name);
  });
- if(!rateRes.error)shippingRates=rateRes.data||[];
+ shippingRates=rateRes.error?[]:(rateRes.data||[]);
  const filter=$("#category-filter");
  if(filter){
   const current=filter.value;
