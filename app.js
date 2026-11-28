@@ -69,8 +69,7 @@ async function loadTaxonomy(){
  if(select){
   const current=select.value;
   select.innerHTML='<option value="">Toutes les catégories</option>'+
-   APPROVED_CATEGORY_ORDER.filter(n=>n!=="Promotions").map(n=>{const c=categoryByName(n);return c?'<option value="'+esc(c.id)+'">'+esc(n)+'</option>':""}).join("")+
-   '<option value="__promotions__">Promotions</option>';
+   APPROVED_CATEGORY_ORDER.map(n=>{if(n==="Promotions")return '<option value="__promotions__">Promotions</option>';const c=categoryByName(n);return c?'<option value="'+esc(c.id)+'">'+esc(n)+'</option>':""}).join("");
   if([...select.options].some(o=>o.value===current))select.value=current;
  }
  updateSubcategoryOptions();
