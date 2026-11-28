@@ -32,7 +32,7 @@ a{color:inherit;text-decoration:none}button,input,select,textarea{font:inherit}
 .category-card{min-width:0;min-height:116px;border:1px solid #f2a6b8;border-radius:19px;background:linear-gradient(135deg,#fff2f5,#ffcbd8);box-shadow:0 3px 6px #8d15331c,inset 0 0 0 2px #fff8;padding:9px 12px;display:flex;align-items:center;justify-content:center;gap:12px;cursor:pointer;transition:.22s;color:var(--ink)}
 .category-card:hover{transform:translateY(-4px);box-shadow:0 8px 18px #8d15332b;border-color:#d64b70}
 .category-art{font-size:55px;filter:drop-shadow(0 4px 3px #9d335522)}
-.category-card b{font-family:"Playfair Display",serif;font-size:15px;line-height:1.35;text-align:left}.category-card i{font-style:normal;color:var(--wine);white-space:nowrap}
+.category-card-copy{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}.category-card b{font-family:"Playfair Display",serif;font-size:15px;line-height:1.35;text-align:left}.category-card i{font-style:normal;color:var(--wine);white-space:nowrap}.category-card small{font-size:10px;color:var(--muted);text-align:left}.category-card img.category-art{width:42%;height:82px;object-fit:contain}.category-card .category-emoji{width:42%}
 .shop-section{padding-top:20px;background:linear-gradient(180deg,#fff8fa,#fff0f4)}
 .shop-tools{display:flex;align-items:center;justify-content:space-between;gap:15px;margin:0 8px 16px}.muted{font-size:12px;color:var(--muted)}
 .shop-filters{display:flex;gap:10px}.shop-tools select{border:1px solid var(--line);background:#fff;border-radius:20px;padding:10px 14px;font-size:12px;color:var(--ink)}
