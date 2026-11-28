@@ -62,6 +62,16 @@ async function loadCommerceMetadata(){
  }
  const cities=$("#shipping-city-options");
  if(cities)cities.innerHTML=shippingRates.map(r=>`<option value="${esc(r.city)}"></option>`).join('');
+ updateSubcategoryFilter();
+}
+function updateSubcategoryFilter(){
+ const mainId=$("#category-filter")?.value,filter=$("#subcategory-filter");
+ if(!filter)return;
+ const available=subcategories.filter(x=>!mainId||String(x.category_id)===String(mainId));
+ const current=filter.value;
+ filter.innerHTML='<option value="">Toutes les sous-catégories</option>'+available.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+ filter.disabled=available.length===0;
+ if([...filter.options].some(o=>o.value===current))filter.value=current;
 }
 async function loadProducts(){
  if(db){
@@ -72,13 +82,14 @@ async function loadProducts(){
  renderProducts();
 }
 function renderProducts(){
- const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,sort=$("#sort").value;
+ const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,subcat=$("#subcategory-filter")?.value||"",sort=$("#sort").value;
  let list=products.filter(p=>{
   const mainCategory=categoryNameById(p.category_id)||p.category||"";
   const subCategory=subcategoryNameById(p.subcategory_id);
   const matchesQuery=!q||[p.name,p.brand,p.category,mainCategory,subCategory,p.sku].join(" ").toLowerCase().includes(q);
   const matchesCategory=!cat||(cat==="__promotions__"?(Number(p.promo_price)>0||(!p.promo_price&&promoIsActive())):String(p.category_id)===cat);
-  return matchesQuery&&matchesCategory;
+  const matchesSubcategory=!subcat||String(p.subcategory_id)===subcat;
+  return matchesQuery&&matchesCategory&&matchesSubcategory;
  });
  if(sort==="price-asc")list.sort((a,b)=>priceInfo(a).final-priceInfo(b).final);
  if(sort==="price-desc")list.sort((a,b)=>priceInfo(b).final-priceInfo(a).final);
@@ -385,9 +396,9 @@ document.addEventListener("click",async e=>{
  const rem=e.target.closest("[data-remove]");if(rem){cart=cart.filter(x=>x.id!==rem.dataset.remove);saveCart()}
  const edit=e.target.closest('[data-edit-product]');if(edit&&db&&isAdmin){const product=adminProducts.find(x=>String(x.id)===edit.dataset.editProduct);if(product){adminTab='products';renderAdminTab();$("#p-id").value=product.id;$("#p-name").value=product.name||'';$("#p-category").value=product.category_id||categories[0]?.id||"";$("#p-category").dispatchEvent(new Event("change"));$("#p-subcategory").value=product.subcategory_id||"";$("#p-price").value=product.price??'';$("#p-brand").value=product.brand||'';$("#p-sku").value=product.sku||'';$("#p-promo").value=product.promo_price??'';$("#p-image").value=product.image_url||'';$("#p-desc").value=product.description||'';$("#p-save").textContent='Enregistrer les modifications';$("#p-cancel-edit").hidden=false;$("#p-name").focus()}return}
  const del=e.target.closest("[data-delete]");if(del&&db&&isAdmin){if(confirm("Supprimer ce produit ?")){const {error}=await db.from("products").delete().eq("id",del.dataset.delete);if(error)toast(error.message);else{await loadProducts();await loadAdminData();adminTab="products";renderAdminTab();toast("Produit supprimé.")}}}
- const cat=e.target.closest("[data-category]");if(cat){$("#category-filter").value=cat.dataset.category;renderProducts();$("#boutique").scrollIntoView()}
+ const cat=e.target.closest("[data-category]");if(cat){$("#category-filter").value=cat.dataset.category;updateSubcategoryFilter();renderProducts();$("#boutique").scrollIntoView()}
 });
-$("#search").addEventListener("input",renderProducts);$("#category-filter").addEventListener("change",renderProducts);$("#sort").addEventListener("change",renderProducts);
+$("#search").addEventListener("input",renderProducts);$("#category-filter").addEventListener("change",()=>{updateSubcategoryFilter();renderProducts()});$("#subcategory-filter")?.addEventListener("change",renderProducts);$("#sort").addEventListener("change",renderProducts);
 $("#c-city")?.addEventListener("input",updateCheckoutPriceSummary);
 $("#c-city")?.addEventListener("change",updateCheckoutPriceSummary);
 $("#cart-open").onclick=()=>drawer(true);$("#account-open").onclick=async()=>{await refreshAuth();$("#account-modal").classList.add("open");$("#account-backdrop").classList.add("open");accountPanel()};$("#account-backdrop").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#account-close").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#drawer-backdrop").onclick=()=>drawer(false);document.querySelectorAll("[data-close]").forEach(x=>x.onclick=()=>drawer(false));
