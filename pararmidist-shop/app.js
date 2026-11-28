@@ -164,9 +164,14 @@ function reconcileCartWithProducts(){
 }
 async function loadProducts(){
  if(db){
-  await loadCommerceMetadata();
+  try{await loadCommerceMetadata()}
+  catch(error){
+   console.error("Métadonnées commerciales indisponibles :",error);
+   categories=[];subcategories=[];shippingRates=[];
+   toast("Certaines informations de livraison ou de catégories sont momentanément indisponibles.");
+  }
   try{products=await fetchAllProducts(true);reconcileCartWithProducts()}
-  catch(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}
+  catch(error){console.error("Chargement du catalogue impossible :",error);toast("Impossible de charger le catalogue.");products=[]}
  }else{products=sample;reconcileCartWithProducts()}
  renderProducts();
 }
