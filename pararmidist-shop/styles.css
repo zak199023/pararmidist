@@ -288,3 +288,7 @@ footer{background:#720021;color:#fff;padding:28px clamp(20px,7vw,110px) 16px}
 .brand-band .eyebrow{color:#b76b42}
 @media(max-width:900px){.announcement{font-size:10px;gap:9px}.featured-products{grid-template-columns:repeat(3,minmax(0,1fr))}.home-promo-panels{grid-template-columns:1fr 1fr}.promo-newsletter{grid-column:span 2}}
 @media(max-width:620px){.announcement{height:auto;min-height:34px;justify-content:center;flex-wrap:wrap;padding:7px 10px;white-space:normal;font-size:9px}.announcement-contact{margin-left:0}.hero-redesign{min-height:275px;padding:25px 18px}.hero-banner-art{object-position:58% center;opacity:.8}.hero-copy{max-width:70%}.hero-tagline{font-size:25px}.hero-assurances{display:none}.featured-products{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.featured-product-card .product-image{height:125px}.home-promo-panels{grid-template-columns:1fr;padding-top:10px}.promo-newsletter{grid-column:auto}.home-promo-card{min-height:150px}.category-card{min-height:130px}.category-card img.category-art,.category-card .category-emoji{height:80px}}
+
+
+/* Indicateurs de disponibilité dans l’administration */
+.stock-status{display:inline-block;margin:3px 0;padding:3px 7px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap}.stock-status-out{background:#fde8e8;color:#a51d2d}.stock-status-low{background:#fff3d6;color:#855600}.stock-status-ok{background:#e4f4e9;color:#21683a}
