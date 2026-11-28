@@ -144,6 +144,7 @@ function renderCart(){
  $("#cart-total").textContent=money(total);
  const foot=$(".cart-foot");let summary=$("#cart-discount-summary");if(!summary&&foot){summary=document.createElement('div');summary.id='cart-discount-summary';summary.className='cart-discount-summary';foot.insertBefore(summary,foot.querySelector('.cart-total'))}if(summary)summary.innerHTML=savings>0?`<span>Sous-total</span><b>${money(before)}</b><span>Remise Rmi-Dist</span><b>− ${money(savings)}</b>`:'';
 }
+window.addEventListener("storage",e=>{if(e.key==="prd-cart"){cart=loadSavedCart();renderCart()}});
 function drawer(open){$("#cart-drawer").classList.toggle("open",open);$("#drawer-backdrop").classList.toggle("open",open)}
 function checkoutModal(open){
  const el=$("#checkout-modal"),back=$("#checkout-backdrop");
