@@ -1,6 +1,16 @@
 /* Rmi-Dist storefront. Configure Supabase in this file before launch. */
 const CONFIG = { supabaseUrl: "https://hzosrdvaajjfenbzjxhg.supabase.co", supabaseAnonKey: "sb_publishable_AF7DhI63sGlRQXtnGZ3l-w_9EBLu1yQ", whatsapp: "212660622369" };
 const money = n => new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(Number(n||0));
+const APPROVED_SUBCATEGORIES = {
+ "Bien-être":["Minceur","Sommeil","Stress & détente","Vitalité"],
+ "Cosmétiques & Beauté":["Maquillage","Parfumerie","Protection solaire","Soins du corps","Soins du visage","Soins mains & ongles"],
+ "Parapharmacie":["Compléments alimentaires","Hygiène","Hygiène bucco-dentaire","Hygiène intime","Matériel médical","Premiers soins"],
+ "Produits Maman & Bébé":["Accessoires d'allaitement","Allaitement","Grossesse","Hygiène bébé","Soins bébé"],
+ "Produits Naturels":["Huiles naturelles","Plantes & tisanes","Soins naturels"],
+ "Promotions":["Promotions bébé","Promotions corps","Promotions visage"],
+ "Soins Capillaires":["Anti-chute","Après-shampoings","Masques","Shampoings","Traitements anti-poux"],
+ "Soins dermatologiques":["Acné","Cicatrices","Cicatrices & brûlures","Dépigmentation","Eczéma & peau sensible"]
+};
 const $ = s => document.querySelector(s);
 let db = null, products = [], cart = JSON.parse(localStorage.getItem("prd-cart")||"[]"), isAdmin = false;
 let categories = [], subcategories = [], shippingRates = [];
@@ -65,7 +75,10 @@ async function loadCommerceMetadata(){
   db.from("shipping_rates").select("city,shipping_fee,is_active").eq("is_active",true)
  ]);
  if(!catRes.error)categories=catRes.data||[];
- if(!subRes.error)subcategories=subRes.data||[];
+ if(!subRes.error)subcategories=(subRes.data||[]).filter(sc=>{
+  const parent=categories.find(c=>String(c.id)===String(sc.category_id));
+  return !!parent&&(APPROVED_SUBCATEGORIES[parent.name]||[]).includes(sc.name);
+ });
  if(!rateRes.error)shippingRates=rateRes.data||[];
  const filter=$("#category-filter");
  if(filter){
