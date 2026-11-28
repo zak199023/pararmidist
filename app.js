@@ -274,17 +274,28 @@ function adminDashboard(){
  $("#admin-logout").onclick=async()=>{await db.auth.signOut();isAdmin=false;$("#admin-modal").classList.remove("admin-modal-wide");adminLogin()};
  loadAdminData();
 }
+async function fetchAllAdminRows(table,orderColumn="created_at"){
+ let rows=[],offset=0,pageSize=500;
+ while(true){
+  const {data,error}=await db.from(table).select("*").order(orderColumn,{ascending:false}).range(offset,offset+pageSize-1);
+  if(error)throw error;
+  rows=rows.concat(data||[]);
+  if(!data||data.length<pageSize)break;
+  offset+=pageSize;
+ }
+ return {data:rows,error:null};
+}
 async function loadAdminData(){
  if(!db||!isAdmin)return;
  const [ordersRes,productsRes,customersRes,promoRes,movementsRes,returnsRes,exchangesRes,lossesRes]=await Promise.all([
-  db.from("orders").select("*").order("created_at",{ascending:false}).limit(2000),
+  fetchAllAdminRows("orders"),
   fetchAllProducts(false).then(data=>({data,error:null})).catch(error=>({data:null,error})),
-  db.from("customers").select("*").order("last_order_at",{ascending:false}).limit(5000),
+  fetchAllAdminRows("customers","last_order_at"),
   db.from("promotion_settings").select("*").eq("id",1).maybeSingle(),
-  db.from("stock_movements").select("*").order("created_at",{ascending:false}).limit(500),
-  db.from("order_returns").select("*").order("created_at",{ascending:false}).limit(500),
-  db.from("product_exchanges").select("*").order("created_at",{ascending:false}).limit(500),
-  db.from("stock_losses").select("*").order("created_at",{ascending:false}).limit(500)
+  fetchAllAdminRows("stock_movements"),
+  fetchAllAdminRows("order_returns"),
+  fetchAllAdminRows("product_exchanges"),
+  fetchAllAdminRows("stock_losses")
  ]);
  const failed=[ordersRes,productsRes,customersRes,movementsRes,returnsRes,exchangesRes,lossesRes].find(x=>x.error);
  if(failed){$("#admin-workspace").innerHTML=`<div class="admin-error">Impossible de charger les données : ${esc(failed.error.message)}.</div>`;return}
