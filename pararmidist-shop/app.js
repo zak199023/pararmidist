@@ -174,7 +174,8 @@ async function submitOrder(){
  const form=$("#checkout-form");if(!form.reportValidity())return;
  const customer={customer_name:$("#c-name").value.trim(),phone:$("#c-phone").value.trim(),email:$("#c-email").value.trim(),city:$("#c-city").value.trim(),address:$("#c-address").value.trim(),notes:$("#c-notes").value.trim()};
  if(shippingFeeForCity(customer.city)===null){toast("Cette ville n’a pas encore de tarif de livraison configuré.");return}
- for(const line of cart){const product=products.find(p=>String(p.id)===String(line.id));if(!product){toast("Un produit du panier n’est plus disponible. Actualisez le catalogue.");return}const available=Number(product.stock||0);if(!Number.isInteger(Number(line.qty))||Number(line.qty)<1||Number(line.qty)>available){toast(`Stock insuffisant pour ${product.name}. Disponible : ${available}. Modifiez votre panier.`);return}}\n const items=cart.map(x=>({product_id:x.id,quantity:Number(x.qty)}));
+ for(const line of cart){const product=products.find(p=>String(p.id)===String(line.id));if(!product){toast("Un produit du panier n’est plus disponible. Actualisez le catalogue.");return}const available=Number(product.stock||0);if(!Number.isInteger(Number(line.qty))||Number(line.qty)<1||Number(line.qty)>available){toast(`Stock insuffisant pour ${product.name}. Disponible : ${available}. Modifiez votre panier.`);return}}
+ const items=cart.map(x=>({product_id:x.id,quantity:Number(x.qty)}));
  const btn=$("#place-order");btn.disabled=true;btn.textContent="Enregistrement…";
  try{
   const {data,error}=await db.functions.invoke("create-order",{body:{customer,items}});
