@@ -185,7 +185,7 @@ function productCardMarkup(p,compact=false){
 }
 function renderFeaturedProducts(){
  const host=$("#featured-products");if(!host)return;
- const list=products.filter(p=>p.published!==false).slice(0,5);
+ const list=products.filter(p=>p.published!==false&&p.is_featured===true&&Number(p.stock||0)>0).sort((a,b)=>Number(a.featured_sort||0)-Number(b.featured_sort||0)).slice(0,8);
  host.innerHTML=list.length?list.map(p=>productCardMarkup(p,true)).join(""):'<div class="empty">Les nouveautés seront affichées ici dès leur disponibilité.</div>';
 }
 function renderProducts(){
