@@ -271,7 +271,7 @@ function adminDashboard(){
  $("#admin-modal").classList.add("admin-modal-wide");
  $("#admin-content").innerHTML=`<div class="admin-shell"><div class="admin-topline"><div><p class="eyebrow">CENTRE DE PILOTAGE</p><h3>Gestion Rmi-Dist</h3><p class="admin-hint">Vue centralisée de votre activité commerciale. Les données proviennent de Supabase.</p></div><button class="btn btn-light" id="admin-refresh">Actualiser</button></div><nav class="admin-tabs" aria-label="Navigation administration"><button data-admin-tab="overview" class="active">Vue générale</button><button data-admin-tab="orders">Commandes</button><button data-admin-tab="customers">Clients</button><button data-admin-tab="products">Produits</button><button data-admin-tab="stock">Stock</button><button data-admin-tab="returns">Retours & échanges</button><button data-admin-tab="losses">Pertes</button><button data-admin-tab="promotion">Promotions</button><button data-admin-tab="reports">Rapports</button></nav><div id="admin-workspace"><div class="admin-loading">Chargement des données commerciales…</div></div><div class="admin-footer"><span>Session administrateur sécurisée</span><button class="btn btn-light" id="admin-logout">Déconnexion</button></div></div>`;
  $("#admin-refresh").onclick=loadAdminData;
- $("#admin-logout").onclick=async()=>{await db.auth.signOut();isAdmin=false;$("#admin-modal").classList.remove("admin-modal-wide");adminLogin()};
+ $("#admin-logout").onclick=guardedAdminButton($("#admin-logout"),async()=>{const {error}=await db.auth.signOut();if(error)throw error;isAdmin=false;$("#admin-modal").classList.remove("admin-modal-wide");adminLogin()});
  loadAdminData();
 }
 async function fetchAllAdminRows(table,orderColumn="created_at"){
@@ -480,8 +480,9 @@ document.addEventListener('change',async e=>{
   if(previous===next)return;
   status.disabled=true;
   try{
-   const {error}=await db.from('orders').update({status:next}).eq('id',status.dataset.orderStatus);
+   const {data:updated,error}=await db.from('orders').update({status:next}).eq('id',status.dataset.orderStatus).select('id').maybeSingle();
    if(error)throw error;
+   if(!updated)throw new Error("Aucune commande modifiée : accès refusé ou commande introuvable.");
    order.status=next;toast('Statut de commande mis à jour.');renderAdminTab();
   }catch(error){toast('Statut non modifié : '+(error.message||'erreur réseau.'));status.value=previous;status.disabled=false}
  }
