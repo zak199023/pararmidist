@@ -422,9 +422,22 @@ async function saveAdminProduct(){
  const stock=Number($("#p-stock").value);
  if(!productId&&(!Number.isInteger(stock)||stock<0)){toast("Le stock initial doit être un nombre entier positif ou nul.");return}
  const payload={name,category,category_id:categoryId,subcategory_id:subcategoryId,price,brand:$("#p-brand").value.trim()||null,sku:$("#p-sku").value.trim()||null,promo_price:promo,image_url:$("#p-image").value.trim()||null,description:$("#p-desc").value.trim()||null,published:existing?existing.published:true};
- if(!productId)payload.stock=stock;
- const result=productId?await db.from('products').update(payload).eq('id',productId):await db.from('products').insert(payload);
- if(result.error){toast('Erreur : '+result.error.message);return}toast(productId?'Produit modifié.':'Produit ajouté.');await loadProducts();await loadAdminData();adminTab='products';renderAdminTab();
+ if(productId){
+  const result=await db.from('products').update(payload).eq('id',productId);
+  if(result.error){toast('Erreur : '+result.error.message);return}
+ }else{
+  payload.stock=0;
+  const {data:created,error}=await db.from('products').insert(payload).select('id').single();
+  if(error){toast('Erreur : '+error.message);return}
+  if(stock>0){
+   const {error:movementError}=await db.from('stock_movements').insert({product_id:created.id,movement_type:'adjustment',quantity_change:stock,reason:'Stock initial à la création du produit',reference_key:'initial-stock:'+created.id,created_by:currentUser?.id||null});
+   if(movementError){
+    toast('Produit créé, mais stock initial non enregistré. Ouvrez Gestion du stock pour ajouter '+stock+' unité(s).');
+    await loadProducts();await loadAdminData();adminTab='stock';renderAdminTab();return;
+   }
+  }
+ }
+ toast(productId?'Produit modifié.':'Produit ajouté.');await loadProducts();await loadAdminData();adminTab='products';renderAdminTab();
 }
 async function savePromotion(){
  const rate=Number($("#promo-rate").value),active=$("#promo-active").checked,start=$("#promo-start").value||null,end=$("#promo-end").value||null;
