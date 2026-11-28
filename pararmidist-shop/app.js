@@ -419,12 +419,14 @@ async function saveAdminProduct(){
  if(promo!==null&&(!Number.isFinite(promo)||promo<=0||promo>=price)){toast('Le prix promotionnel doit être supérieur à 0 et inférieur au prix normal.');return}
  const productId=$("#p-id").value;
  const existing=productId?adminProducts.find(x=>String(x.id)===productId):null;
+ if(productId&&!existing){toast("Produit introuvable dans le catalogue chargé. Rechargez la liste avant de modifier.");return}
  const stock=Number($("#p-stock").value);
  if(!productId&&(!Number.isInteger(stock)||stock<0)){toast("Le stock initial doit être un nombre entier positif ou nul.");return}
  const payload={name,category,category_id:categoryId,subcategory_id:subcategoryId,price,brand:$("#p-brand").value.trim()||null,sku:$("#p-sku").value.trim()||null,promo_price:promo,image_url:$("#p-image").value.trim()||null,description:$("#p-desc").value.trim()||null,published:existing?existing.published:true};
  if(productId){
-  const result=await db.from('products').update(payload).eq('id',productId);
-  if(result.error){toast('Erreur : '+result.error.message);return}
+  const {data:updated,error:updateError}=await db.from('products').update(payload).eq('id',productId).select('id').maybeSingle();
+  if(updateError){toast('Erreur : '+updateError.message);return}
+  if(!updated){toast("Aucune modification enregistrée : produit introuvable ou accès refusé.");return}
  }else{
   payload.stock=0;
   const {data:created,error}=await db.from('products').insert(payload).select('id').single();
