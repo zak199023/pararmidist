@@ -38,6 +38,19 @@ async function loadPromoConfig(){
 function normalizeText(value){return String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase()}
 function categoryNameById(id){return categories.find(c=>String(c.id)===String(id))?.name||""}
 function subcategoryNameById(id){return subcategories.find(c=>String(c.id)===String(id))?.name||""}
+async function fetchAllProducts(publishedOnly=false){
+ let rows=[],offset=0,pageSize=500;
+ while(true){
+  let query=db.from("products").select("*").order("created_at",{ascending:false}).range(offset,offset+pageSize-1);
+  if(publishedOnly)query=query.eq("published",true);
+  const {data,error}=await query;
+  if(error)throw error;
+  rows=rows.concat(data||[]);
+  if(!data||data.length<pageSize)break;
+  offset+=pageSize;
+ }
+ return rows;
+}
 function shippingFeeForCity(city){
  const normalized=normalizeText(city);
  if(normalized==="casablanca")return 0;
@@ -57,7 +70,7 @@ async function loadCommerceMetadata(){
  const filter=$("#category-filter");
  if(filter){
   const current=filter.value;
-  filter.innerHTML='<option value="">Toutes les catégories</option>'+categories.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')+'<option value="__promotions__">Promotions</option>';
+  filter.innerHTML='<option value="">Toutes les catégories</option>'+categories.filter(c=>normalizeText(c.name)!=="promotions").map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')+'<option value="__promotions__">Promotions</option>';
   if([...filter.options].some(o=>o.value===current))filter.value=current;
  }
  const cities=$("#shipping-city-options");
@@ -76,8 +89,8 @@ function updateSubcategoryFilter(){
 async function loadProducts(){
  if(db){
   await loadCommerceMetadata();
-  const {data,error}=await db.from("products").select("*").eq("published",true).order("created_at",{ascending:false});
-  if(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}else products=data||[];
+  try{products=await fetchAllProducts(true)}
+  catch(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}
  }else products=sample;
  renderProducts();
 }
@@ -218,7 +231,7 @@ async function loadAdminData(){
  if(!db||!isAdmin)return;
  const [ordersRes,productsRes,customersRes,promoRes,movementsRes,returnsRes,exchangesRes,lossesRes]=await Promise.all([
   db.from("orders").select("*").order("created_at",{ascending:false}).limit(2000),
-  db.from("products").select("*").order("created_at",{ascending:false}).limit(5000),
+  fetchAllProducts(false).then(data=>({data,error:null})).catch(error=>({data:null,error})),
   db.from("customers").select("*").order("last_order_at",{ascending:false}).limit(5000),
   db.from("promotion_settings").select("*").eq("id",1).maybeSingle(),
   db.from("stock_movements").select("*").order("created_at",{ascending:false}).limit(500),
