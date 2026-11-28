@@ -1,8 +1,27 @@
 /* Rmi-Dist storefront. Configure Supabase in this file before launch. */
 const CONFIG = { supabaseUrl: "https://hzosrdvaajjfenbzjxhg.supabase.co", supabaseAnonKey: "sb_publishable_AF7DhI63sGlRQXtnGZ3l-w_9EBLu1yQ", whatsapp: "212660622369" };
 const money = n => new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(Number(n||0));
+const APPROVED_SUBCATEGORIES = {
+ "Bien-être":["Minceur","Sommeil","Stress & détente","Vitalité"],
+ "Cosmétiques & Beauté":["Maquillage","Parfumerie","Protection solaire","Soins du corps","Soins du visage","Soins mains & ongles"],
+ "Parapharmacie":["Compléments alimentaires","Hygiène","Hygiène bucco-dentaire","Hygiène intime","Matériel médical","Premiers soins"],
+ "Produits Maman & Bébé":["Accessoires d'allaitement","Allaitement","Grossesse","Hygiène bébé","Soins bébé"],
+ "Produits Naturels":["Huiles naturelles","Plantes & tisanes","Soins naturels"],
+ "Promotions":["Promotions bébé","Promotions corps","Promotions visage"],
+ "Soins Capillaires":["Anti-chute","Après-shampoings","Masques","Shampoings","Traitements anti-poux"],
+ "Soins dermatologiques":["Acné","Cicatrices","Cicatrices & brûlures","Dépigmentation","Eczéma & peau sensible"]
+};
 const $ = s => document.querySelector(s);
-let db = null, products = [], cart = JSON.parse(localStorage.getItem("prd-cart")||"[]"), isAdmin = false;
+function loadSavedCart(){
+ try{
+  const saved=JSON.parse(localStorage.getItem("prd-cart")||"[]");
+  if(!Array.isArray(saved))return [];
+  return saved.filter(x=>x&&typeof x.id==="string"&&Number.isInteger(Number(x.qty))&&Number(x.qty)>0).map(x=>({id:x.id,qty:Number(x.qty)}));
+ }catch(error){console.warn("Panier local illisible :",error);return []}
+}
+let db = null, products = [], cart = loadSavedCart(), isAdmin = false;
+let categories = [], subcategories = [], shippingRates = [];
+let adminStockMovements = [], adminReturns = [], adminExchanges = [], adminLosses = [];
 let promoConfig = {active:false, discount_rate:5, starts_at:null, ends_at:null};
 let promoConfigLoaded = false;
 let adminOrders = [], adminProducts = [], adminCustomers = [], adminPromo = null, adminPromoError = null, adminTab = "overview";
@@ -14,6 +33,7 @@ const sample = [
  {id:"demo-4",name:"Soin douceur bébé",brand:"Bébé & Maman",category:"Bébé & Maman",description:"Un produit douceur pour les petits moments.",price:119,promo_price:null,image_url:"",sku:"PRD-004",published:true}
 ];
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2600)}
+function guardedAdminButton(button,action){return async function(){if(button.disabled||button.dataset.busy==="true")return;button.dataset.busy="true";button.disabled=true;try{return await action()}catch(error){console.error(error);toast("Opération interrompue : "+(error.message||"erreur réseau."))}finally{button.disabled=false;delete button.dataset.busy}}}
 function configured(){return !!(CONFIG.supabaseUrl&&CONFIG.supabaseAnonKey)}
 if(configured()&&window.supabase){db=window.supabase.createClient(CONFIG.supabaseUrl,CONFIG.supabaseAnonKey)}
 function promoIsActive(){
@@ -23,62 +43,220 @@ function promoIsActive(){
 }
 function priceInfo(p){
  const hasProductPromo=p.promo_price!==null&&p.promo_price!==undefined&&Number(p.promo_price)>0;
- const base=hasProductPromo?Number(p.promo_price):Number(p.price);
- const rate=(!hasProductPromo&&promoIsActive())?Number(promoConfig.discount_rate||5):0;
- const final=Math.round((base*(1-rate/100)+Number.EPSILON)*100)/100;
- return {base,final,rate,hasProductPromo,compareAt:Number(p.price),saving:Math.round((base-final+Number.EPSILON)*100)/100};
+ const original=Number(p.price);
+ const saleBase=hasProductPromo?Number(p.promo_price):original;
+ const rate=(!hasProductPromo&&promoIsActive())?Number(promoConfig.discount_rate??5):0;
+ const final=Math.round((saleBase*(1-rate/100)+Number.EPSILON)*100)/100;
+ return {base:original,final,rate,hasProductPromo,compareAt:original,saving:Math.round((original-final+Number.EPSILON)*100)/100};
 }
 async function loadPromoConfig(){
  if(!db)return;
  const {data,error}=await db.from("promotion_settings").select("active,discount_rate,starts_at,ends_at").eq("id",1).maybeSingle();
  if(!error&&data){promoConfig=data;promoConfigLoaded=true}else{promoConfig={active:false,discount_rate:5,starts_at:null,ends_at:null};promoConfigLoaded=false;if(error)console.warn("Paramètres promotionnels non chargés :",error.message)}
 }
+function normalizeText(value){return String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase()}
+function categoryNameById(id){return categories.find(c=>String(c.id)===String(id))?.name||""}
+function subcategoryNameById(id){return subcategories.find(c=>String(c.id)===String(id))?.name||""}
+
+const CATEGORY_DISPLAY_ORDER=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Produits Maman & Bébé","Bien-être","Produits Naturels","Promotions","Soins Capillaires"];
+function orderedSavedCategories(){return [...categories].sort((a,b)=>{const ai=CATEGORY_DISPLAY_ORDER.indexOf(a.name),bi=CATEGORY_DISPLAY_ORDER.indexOf(b.name);return (ai<0?999:ai)-(bi<0?999:bi)||a.name.localeCompare(b.name,"fr")})}
+function renderSavedCategories(){
+ const host=$(".category-grid");if(!host||!categories.length)return;
+ const art={
+  "Cosmétiques & Beauté":'<img class="category-art" src="assets/category-1.jpg" alt="" loading="lazy">',
+  "Soins dermatologiques":'<img class="category-art" src="assets/category-2.jpg" alt="" loading="lazy">',
+  "Parapharmacie":'<img class="category-art" src="assets/category-3.jpg" alt="" loading="lazy">',
+  "Produits Maman & Bébé":'<img class="category-art" src="assets/category-4.jpg" alt="" loading="lazy">',
+  "Bien-être":'<img class="category-art" src="assets/category-5.jpg" alt="" loading="lazy">',
+  "Produits Naturels":'<span class="category-art category-emoji" aria-hidden="true">🌿</span>',
+  "Promotions":'<span class="category-art category-emoji" aria-hidden="true">🎁</span>',
+  "Soins Capillaires":'<span class="category-art category-emoji" aria-hidden="true">💇</span>'
+ };
+ const icons=["✿","♡","✚","♧","☘","🌿","🎁","✧"];
+ host.innerHTML=orderedSavedCategories().map((category,index)=>{
+  const count=subcategories.filter(item=>String(item.category_id)===String(category.id)).length;
+  const picture=art[category.name]||'<span class="category-art category-emoji" aria-hidden="true">'+icons[index%icons.length]+'</span>';
+  return '<button type="button" class="category-card" data-category="'+esc(category.name)+'" aria-label="Voir les produits de '+esc(category.name)+'">'+picture+'<span class="category-card-copy"><b>'+esc(category.name)+' <i>→</i></b><small>'+count+' sous-catégorie'+(count>1?'s':'')+'</small></span></button>';
+ }).join("");
+}
+function renderSavedCategoryNavigation(){
+ const nav=$("#main-nav");if(!nav||!categories.length)return;
+ const home=nav.querySelector('a[href="#"]:not([data-category])');
+ const contact=nav.querySelector('a[href="#contact"]');
+ nav.querySelectorAll("a[data-category]").forEach(link=>link.remove());
+ const links=orderedSavedCategories().map(category=>{
+  const link=document.createElement("a");link.href="#categories";link.dataset.category=category.name;link.textContent=category.name;return link;
+ });
+ const anchor=contact||null;
+ links.forEach(link=>nav.insertBefore(link,anchor));
+}
+
+async function fetchAllProducts(publishedOnly=false){
+ let rows=[],offset=0,pageSize=500;
+ while(true){
+  let query=db.from("products").select("*").order("created_at",{ascending:false}).range(offset,offset+pageSize-1);
+  if(publishedOnly)query=query.eq("published",true);
+  const {data,error}=await query;
+  if(error)throw error;
+  rows=rows.concat(data||[]);
+  if(!data||data.length<pageSize)break;
+  offset+=pageSize;
+ }
+ return rows;
+}
+function shippingFeeForCity(city){
+ const normalized=normalizeText(city).replace(/\s+/g," ");
+ if(!normalized)return null;
+ if(normalized==="casablanca")return 0;
+ const matches=shippingRates.filter(r=>normalizeText(r.city).replace(/\s+/g," ")===normalized&&r.is_active===true);
+ if(matches.length===0)return 50;
+ if(matches.length!==1)return null;
+ const fee=Number(matches[0].shipping_fee);
+ return Number.isFinite(fee)&&fee>=0?fee:null;
+}
+async function loadCommerceMetadata(){
+ if(!db)return;
+ const [catRes,subRes,rateRes]=await Promise.all([
+  db.from("categories").select("id,name,slug"),
+  db.from("subcategories").select("id,category_id,name,slug"),
+  db.from("shipping_rates").select("city,shipping_fee,is_active").eq("is_active",true)
+ ]);
+ if(!catRes.error)categories=catRes.data||[];
+ if(!subRes.error)subcategories=(subRes.data||[]).filter(sc=>{
+  const parent=categories.find(c=>String(c.id)===String(sc.category_id));
+  return !!parent&&(APPROVED_SUBCATEGORIES[parent.name]||[]).includes(sc.name);
+ });
+ shippingRates=rateRes.error?[]:(rateRes.data||[]);
+ const filter=$("#category-filter");
+ if(filter){
+  const current=filter.value;
+  filter.innerHTML='<option value="">Toutes les catégories</option>'+categories.filter(c=>normalizeText(c.name)!=="promotions").map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')+'<option value="__promotions__">Promotions</option>';
+  if([...filter.options].some(o=>o.value===current))filter.value=current;
+ }
+ const cities=$("#shipping-city-options");
+ if(cities)cities.innerHTML=shippingRates.map(r=>`<option value="${esc(r.city)}"></option>`).join('');
+ updateSubcategoryFilter();
+ renderSavedCategories();renderSavedCategoryNavigation();
+}
+function updateSubcategoryFilter(){
+ const mainId=$("#category-filter")?.value,filter=$("#subcategory-filter");
+ if(!filter)return;
+ const available=subcategories.filter(x=>!mainId||String(x.category_id)===String(mainId));
+ const current=filter.value;
+ filter.innerHTML='<option value="">Toutes les sous-catégories</option>'+available.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
+ filter.disabled=available.length===0;
+ if([...filter.options].some(o=>o.value===current))filter.value=current;
+}
+function reconcileCartWithProducts(){
+ let removed=0,adjusted=0;
+ cart=cart.flatMap(line=>{
+  const product=products.find(p=>String(p.id)===String(line.id));
+  const stock=Number(product?.stock||0);
+  if(!product||!Number.isInteger(stock)||stock<1){removed++;return []}
+  if(line.qty>stock){line.qty=stock;adjusted++}
+  return [line];
+ });
+ if(removed||adjusted){
+  saveCart();
+  const messages=[];
+  if(removed)messages.push(`${removed} article(s) retiré(s), indisponible(s)`);
+  if(adjusted)messages.push(`${adjusted} quantité(s) ajustée(s) au stock`);
+  toast(messages.join(" · "));
+ }
+}
 async function loadProducts(){
- if(db){const {data,error}=await db.from("products").select("*").eq("published",true).order("created_at",{ascending:false});if(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}else products=data||[]}
- else products=sample;
+ if(db){
+  try{await loadCommerceMetadata()}
+  catch(error){
+   console.error("Métadonnées commerciales indisponibles :",error);
+   categories=[];subcategories=[];shippingRates=[];
+   toast("Certaines informations de livraison ou de catégories sont momentanément indisponibles.");
+  }
+  try{products=await fetchAllProducts(true);reconcileCartWithProducts()}
+  catch(error){console.error("Chargement du catalogue impossible :",error);toast("Impossible de charger le catalogue.");products=[]}
+ }else{products=sample;reconcileCartWithProducts()}
  renderProducts();
 }
+let advertisements = [];
+async function loadAdvertisements(){
+ if(!db)return;
+ const result=await db.from('advertisements').select('*').eq('is_active',true).order('sort_order',{ascending:true});
+ advertisements=result.error?[]:(result.data||[]);renderAdvertisements();
+}
+function renderAdvertisements(){
+ const host=$('#advertisements'),section=$('#annonces-publicitaires');if(!host||!section)return;
+ const now=Date.now(),rows=advertisements.filter(a=>(!a.starts_at||new Date(a.starts_at).getTime()<=now)&&(!a.ends_at||new Date(a.ends_at).getTime()>now));
+ host.replaceChildren();
+ rows.forEach(a=>{const card=document.createElement('article');card.className='advertisement-card';if(a.image_url){const img=document.createElement('img');img.src=a.image_url;img.alt=a.title;img.loading='lazy';card.append(img)}const copy=document.createElement('div'),title=document.createElement('h3'),body=document.createElement('p');title.textContent=a.title;body.textContent=a.body||'';copy.append(title,body);if(a.link_url){const link=document.createElement('a');link.className='btn btn-dark';link.href=a.link_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=a.button_label||'En savoir plus';copy.append(link)}card.append(copy);host.append(card)});
+ section.hidden=rows.length===0;
+}
+function productCardMarkup(p,compact=false){
+ const pi=priceInfo(p),stock=Number(p.stock||0),mainCategory=categoryNameById(p.category_id)||p.category||"",subCategory=subcategoryNameById(p.subcategory_id);
+ const old=pi.hasProductPromo&&pi.compareAt>pi.final?'<span class="old-price">'+money(pi.compareAt)+'</span>':"";
+ const discount=pi.hasProductPromo&&pi.compareAt>pi.final?'<span class="price-discount-note">−'+Math.round((1-pi.final/pi.compareAt)*100)+'%</span>':pi.rate?'<span class="price-discount-note">−'+pi.rate+'%</span>':"";
+ return '<article class="product-card'+(compact?' featured-product-card':'')+'"><div class="product-image">'+(p.image_url?'<img src="'+esc(p.image_url)+'" alt="'+esc(p.name)+'" loading="lazy">':'<div class="product-placeholder">✿</div>')+'</div><div class="product-info"><div class="product-brand">'+esc(p.brand||"Rmi-Dist")+'</div><div class="product-name">'+esc(p.name)+'</div><div class="product-meta">'+esc(mainCategory)+(subCategory?' · '+esc(subCategory):"")+'</div><div class="product-buy"><div class="price">'+money(pi.final)+' '+discount+old+'<small class="stock-label">'+(stock>0?"Disponible":"Indisponible")+'</small></div><button class="mini-btn" data-add="'+esc(p.id)+'" '+(stock<=0?"disabled":"")+'>'+(stock>0?"🛒 Ajouter au panier":"Indisponible")+'</button></div></div></article>';
+}
+function renderFeaturedProducts(){
+ const host=$("#featured-products");if(!host)return;
+ const list=products.filter(p=>p.published!==false&&p.is_featured===true&&Number(p.stock||0)>0).sort((a,b)=>Number(a.featured_sort||0)-Number(b.featured_sort||0)).slice(0,8);
+ host.innerHTML=list.length?list.map(p=>productCardMarkup(p,true)).join(""):'<div class="empty">Les nouveautés seront affichées ici dès leur disponibilité.</div>';
+}
 function renderProducts(){
- const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,sort=$("#sort").value;
- let list=products.filter(p=>{const matchesQuery=!q||[p.name,p.brand,p.category,p.sku].join(" ").toLowerCase().includes(q);const matchesCategory=!cat||(cat==="__promotions__"?(Number(p.promo_price)>0||(!p.promo_price&&promoIsActive())):p.category===cat);return matchesQuery&&matchesCategory});
+ const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,subcat=$("#subcategory-filter")?.value||"",sort=$("#sort").value;
+ let list=products.filter(p=>{
+  const mainCategory=categoryNameById(p.category_id)||p.category||"",subCategory=subcategoryNameById(p.subcategory_id);
+  const matchesQuery=!q||[p.name,p.brand,p.category,mainCategory,subCategory,p.sku].join(" ").toLowerCase().includes(q);
+  const matchesCategory=!cat||(cat==="__promotions__"?(Number(p.promo_price)>0||(!p.promo_price&&promoIsActive())):(String(p.category_id)===cat||normalizeText(mainCategory)===normalizeText(cat)));
+  const matchesSubcategory=!subcat||String(p.subcategory_id)===subcat;
+  return matchesQuery&&matchesCategory&&matchesSubcategory;
+ });
  if(sort==="price-asc")list.sort((a,b)=>priceInfo(a).final-priceInfo(b).final);
  if(sort==="price-desc")list.sort((a,b)=>priceInfo(b).final-priceInfo(a).final);
  if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name,"fr"));
- $("#product-total").textContent=`${list.length} produit(s)`;
- $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.base)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+ $("#product-total").textContent=list.length+' produit(s)';
+ $("#products").innerHTML=list.length?list.map(p=>productCardMarkup(p)).join(""):'<div class="empty">Aucun produit ne correspond à cette sélection pour le moment.</div>';
+ renderFeaturedProducts();
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-function saveCart(){localStorage.setItem("prd-cart",JSON.stringify(cart));renderCart()}
-function addCart(id){const p=products.find(x=>x.id===id);if(!p)return;const line=cart.find(x=>x.id===id);if(line)line.qty++;else cart.push({id,qty:1});saveCart();toast("Produit ajouté au panier.")}
+function saveCart(){try{localStorage.setItem("prd-cart",JSON.stringify(cart))}catch(error){console.warn("Panier non sauvegardé sur cet appareil :",error);toast("Le panier reste disponible pendant cette session, mais ne peut pas être sauvegardé sur cet appareil.")}renderCart()}
+function addCart(id){const p=products.find(x=>x.id===id);if(!p)return;const stock=Number(p.stock||0);if(stock<=0){toast("Ce produit est momentanément indisponible.");return}const line=cart.find(x=>x.id===id);if(line){if(line.qty>=stock){toast("La quantité demandée dépasse le stock disponible.");return}line.qty++}else cart.push({id,qty:1});saveCart();toast("Produit ajouté au panier.")}
 function renderCart(){
  const count=cart.reduce((s,x)=>s+x.qty,0);$("#cart-count").textContent=count;
  const lines=cart.map(x=>{const p=products.find(z=>z.id===x.id)||sample.find(z=>z.id===x.id);return p?{...p,qty:x.qty}:null}).filter(Boolean);
  const before=lines.reduce((s,p)=>s+priceInfo(p).base*p.qty,0),savings=lines.reduce((s,p)=>s+priceInfo(p).saving*p.qty,0),total=Math.max(0,before-savings);
- $("#cart-lines").innerHTML=lines.length?lines.map(p=>{const pi=priceInfo(p);return `<div class="cart-line"><div><b>${esc(p.name)}</b><small>${money(pi.final)} ${pi.rate?`· remise ${pi.rate}% non cumulable`:pi.hasProductPromo?'· prix promotionnel':''} · ${esc(p.sku||'')}</small><div class="qty-controls" role="group" aria-label="Quantité de ${esc(p.name)}"><button class="qty-step" data-qty="${esc(p.id)}" data-delta="-1" aria-label="Diminuer la quantité" title="Diminuer">−</button><span class="qty-value" aria-live="polite">${p.qty}</span><button class="qty-step qty-plus" data-qty="${esc(p.id)}" data-delta="1" aria-label="Augmenter la quantité" title="Augmenter">+</button><button class="qty-remove" data-remove="${esc(p.id)}" aria-label="Supprimer ${esc(p.name)} du panier" title="Supprimer du panier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m3 3v7m6-7v7"/></svg></button></div></div><strong>${money(pi.final*p.qty)}</strong></div>`}).join(''):'<div class="empty">Votre panier est encore vide.</div>';
+ $("#cart-lines").innerHTML=lines.length?lines.map(p=>{const pi=priceInfo(p);return `<div class="cart-line"><div><b>${esc(p.name)}</b><small>${money(pi.final)} ${pi.rate?`· remise ${pi.rate}% non cumulable`:pi.hasProductPromo?'· prix promotionnel':''} · ${esc(p.sku||'')}</small><div class="qty-controls" role="group" aria-label="Quantité de ${esc(p.name)}"><button class="qty-step" data-qty="${esc(p.id)}" data-delta="-1" aria-label="Diminuer la quantité" title="Diminuer">−</button><span class="qty-value" aria-live="polite">${p.qty}</span><button class="qty-step qty-plus" data-qty="${esc(p.id)}" data-delta="1" aria-label="Augmenter la quantité" title="Augmenter" ${p.qty>=Number(p.stock||0)?"disabled":""}>+</button><button class="qty-remove" data-remove="${esc(p.id)}" aria-label="Supprimer ${esc(p.name)} du panier" title="Supprimer du panier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m3 3v7m6-7v7"/></svg></button></div></div><strong>${money(pi.final*p.qty)}</strong></div>`}).join(''):'<div class="empty">Votre panier est encore vide.</div>';
  $("#cart-total").textContent=money(total);
  const foot=$(".cart-foot");let summary=$("#cart-discount-summary");if(!summary&&foot){summary=document.createElement('div');summary.id='cart-discount-summary';summary.className='cart-discount-summary';foot.insertBefore(summary,foot.querySelector('.cart-total'))}if(summary)summary.innerHTML=savings>0?`<span>Sous-total</span><b>${money(before)}</b><span>Remise Rmi-Dist</span><b>− ${money(savings)}</b>`:'';
 }
+window.addEventListener("storage",e=>{if(e.key==="prd-cart"){cart=loadSavedCart();renderCart()}});
 function drawer(open){$("#cart-drawer").classList.toggle("open",open);$("#drawer-backdrop").classList.toggle("open",open)}
 function checkoutModal(open){
  const el=$("#checkout-modal"),back=$("#checkout-backdrop");
  if(el)el.classList.toggle("open",open);
  if(back)back.classList.toggle("open",open);
 }
+function updateCheckoutPriceSummary(){
+ const lines=cart.map(x=>{const p=products.find(z=>z.id===x.id);return p?{...p,qty:x.qty}:null}).filter(Boolean);
+ const base=lines.reduce((s,p)=>s+Number(p.price||0)*p.qty,0);
+ const final=lines.reduce((s,p)=>s+priceInfo(p).final*p.qty,0);
+ const discount=Math.max(0,base-final);
+ const city=$("#c-city")?.value||"",shipping=city?shippingFeeForCity(city):null;
+ const summary=$("#checkout-price-summary");if(!summary)return;
+ summary.innerHTML=`<div><span>Sous-total</span><b>${money(base)}</b></div>${discount?`<div><span>Remise Rmi-Dist</span><b>− ${money(discount)}</b></div>`:""}<div><span>Livraison</span><b>${shipping===null?"Saisissez une ville desservie":shipping===0?"Gratuite":money(shipping)}</b></div><div class="checkout-grand-total"><span>Total estimé</span><b>${shipping===null?"—":money(final+shipping)}</b></div><small>Casablanca : livraison gratuite. Les autres tarifs sont ceux de la ville choisie. Le serveur confirme le montant final.</small>`;
+}
 function startWebsiteOrder(){
  if(!cart.length){toast("Votre panier est vide.");return}
  if(!db){toast("Configurez Supabase pour enregistrer les commandes.");return}
  if(!promoConfigLoaded){toast("Les tarifs sont en cours de vérification. Réessayez dans un instant.");return}
- const lines=cart.map(x=>{const p=products.find(z=>z.id===x.id)||sample.find(z=>z.id===x.id);return p?{...p,qty:x.qty}:null}).filter(Boolean);
- const base=lines.reduce((s,p)=>s+priceInfo(p).base*p.qty,0),discount=lines.reduce((s,p)=>s+priceInfo(p).saving*p.qty,0),total=base-discount;
- const summary=$("#checkout-price-summary");if(summary)summary.innerHTML=`<div><span>Sous-total</span><b>${money(base)}</b></div>${discount?`<div><span>Remise Rmi-Dist</span><b>− ${money(discount)}</b></div>`:''}<div class="checkout-grand-total"><span>Total à payer</span><b>${money(total)}</b></div><small>La remise générale ne se cumule pas avec un prix déjà promotionnel. Le montant définitif est recalculé par notre serveur.</small>`;
  checkoutModal(true);
+ updateCheckoutPriceSummary();
 }
 function showOrderConfirmation(order,reference){
  const old=document.getElementById("order-success-modal");if(old)old.remove();
  const waText="Bonjour Rmi-Dist, je viens de passer la commande "+reference+". Pouvez-vous me confirmer sa prise en charge ?";
  const el=document.createElement("section");el.id="order-success-modal";el.className="order-success-modal";
  el.setAttribute("role","dialog");el.setAttribute("aria-modal","true");el.setAttribute("aria-labelledby","order-success-title");
- el.innerHTML="<div class=\"order-success-card\"><button type=\"button\" class=\"close-btn order-success-close\" aria-label=\"Fermer\">×</button><div class=\"order-success-mark\">✓</div><p class=\"eyebrow\">RMI-DIST</p><h2 id=\"order-success-title\">Merci pour votre commande !</h2><p>Votre commande <b>"+esc(reference)+"</b> a bien été enregistrée.</p><p class=\"order-success-total\">Total des produits : <b>"+money(order.total)+"</b></p><p class=\"order-success-note\">Notre équipe vous contactera pour confirmer la livraison. Livraison gratuite à Casablanca ; pour les autres villes, les frais de transport seront confirmés par notre équipe.</p><a class=\"btn btn-dark full\" href=\"https://wa.me/"+CONFIG.whatsapp+"?text="+encodeURIComponent(waText)+"\" target=\"_blank\" rel=\"noopener noreferrer\">Contacter Rmi-Dist sur WhatsApp</a><button type=\"button\" class=\"btn btn-light full order-success-done\">Continuer mes achats</button></div>";
+ el.innerHTML="<div class=\"order-success-card\"><button type=\"button\" class=\"close-btn order-success-close\" aria-label=\"Fermer\">×</button><div class=\"order-success-mark\" role=\"img\" aria-label=\"Crochet vert : commande confirmée\">✓</div><div class=\"order-success-status\" role=\"status\"><span>✓</span> OK — COMMANDE CONFIRMÉE</div><p class=\"eyebrow\">RMI-DIST</p><h2 id=\"order-success-title\">Merci pour votre commande !</h2><p>Votre commande <b>"+esc(reference)+"</b> a bien été enregistrée.</p><p class=\"order-success-total\">Total à payer : <b>"+money(order.total)+"</b></p><p class=\"order-success-note\">Notre équipe vous contactera pour confirmer la livraison. Les frais affichés à la commande sont calculés selon la ville choisie.</p><a class=\"btn btn-dark full\" href=\"https://wa.me/"+CONFIG.whatsapp+"?text="+encodeURIComponent(waText)+"\" target=\"_blank\" rel=\"noopener noreferrer\">Contacter Rmi-Dist sur WhatsApp</a><button type=\"button\" class=\"btn btn-light full order-success-done\">Continuer mes achats</button></div>";
  document.body.appendChild(el);
  const close=()=>el.remove();el.querySelector(".order-success-close").onclick=close;el.querySelector(".order-success-done").onclick=close;
  el.addEventListener("click",e=>{if(e.target===el)close()});
@@ -87,6 +265,8 @@ function showOrderConfirmation(order,reference){
 async function submitOrder(){
  const form=$("#checkout-form");if(!form.reportValidity())return;
  const customer={customer_name:$("#c-name").value.trim(),phone:$("#c-phone").value.trim(),email:$("#c-email").value.trim(),city:$("#c-city").value.trim(),address:$("#c-address").value.trim(),notes:$("#c-notes").value.trim()};
+ if(shippingFeeForCity(customer.city)===null){toast("Cette ville n’a pas encore de tarif de livraison configuré.");return}
+ for(const line of cart){const product=products.find(p=>String(p.id)===String(line.id));if(!product){toast("Un produit du panier n’est plus disponible. Actualisez le catalogue.");return}const available=Number(product.stock||0);if(!Number.isInteger(Number(line.qty))||Number(line.qty)<1||Number(line.qty)>available){toast(`Stock insuffisant pour ${product.name}. Disponible : ${available}. Modifiez votre panier.`);return}}
  const items=cart.map(x=>({product_id:x.id,quantity:Number(x.qty)}));
  const btn=$("#place-order");btn.disabled=true;btn.textContent="Enregistrement…";
  try{
@@ -98,7 +278,14 @@ async function submitOrder(){
   const ref=o.order_number||String(o.id).slice(0,8).toUpperCase();
   toast(`Merci ! Votre commande ${ref} a bien été enregistrée.`);
   showOrderConfirmation(o,ref);
- }catch(err){console.error(err);toast("Commande non enregistrée : "+(err.message||"erreur Supabase."))}
+ }catch(err){
+  console.error(err);
+  let message=err?.message||"erreur Supabase.";
+  if(err?.context&&typeof err.context.json==="function"){
+   try{const payload=await err.context.json();if(payload?.error)message=payload.error}catch(parseError){console.warn("Détail de réponse de commande indisponible.",parseError)}
+  }
+  toast("Commande non enregistrée : "+message);
+ }
  finally{btn.disabled=false;btn.textContent="Confirmer ma commande"}
 }
 
@@ -114,12 +301,12 @@ function accountPanel(){
  if(!db){host.innerHTML='<p class="admin-hint">La connexion Supabase est nécessaire pour créer un compte client.</p>';return}
  if(!currentUser){
   host.innerHTML=`<div class="admin-panel"><p class="admin-hint">Créez votre compte pour retrouver vos commandes à tout moment.</p><label>Nom complet</label><input id="acc-name" autocomplete="name"><label>E-mail</label><input id="acc-email" type="email" autocomplete="email"><label>Mot de passe</label><input id="acc-password" type="password" minlength="8" autocomplete="new-password"><div class="account-actions"><button class="btn btn-dark full" id="acc-signup">Créer mon compte</button><button class="btn btn-light full" id="acc-login">J'ai déjà un compte</button></div></div>`;
-  $("#acc-signup").onclick=async()=>{const name=$("#acc-name").value.trim(),email=$("#acc-email").value.trim(),password=$("#acc-password").value;if(!name||!email||password.length<8){toast("Indiquez votre nom, un e-mail et un mot de passe de 8 caractères minimum.");return}const {data,error}=await db.auth.signUp({email,password,options:{data:{full_name:name}}});if(error){toast("Inscription impossible : "+error.message);return}if(data.session){await refreshAuth();accountPanel();toast("Compte créé avec succès.")}else toast("Compte créé. Vérifiez votre e-mail pour confirmer l'inscription.")};
-  $("#acc-login").onclick=async()=>{const email=$("#acc-email").value.trim(),password=$("#acc-password").value;if(!email||!password){toast("Saisissez votre e-mail et votre mot de passe.");return}const {error}=await db.auth.signInWithPassword({email,password});if(error){toast("Connexion refusée : "+error.message);return}await refreshAuth();accountPanel();toast("Bienvenue sur Rmi-Dist.")};
+  $("#acc-signup").onclick=guardedAdminButton($("#acc-signup"),async()=>{const name=$("#acc-name").value.trim(),email=$("#acc-email").value.trim(),password=$("#acc-password").value;if(!name||!email||password.length<8){toast("Indiquez votre nom, un e-mail et un mot de passe de 8 caractères minimum.");return}const {data,error}=await db.auth.signUp({email,password,options:{data:{full_name:name}}});if(error){toast("Inscription impossible : "+error.message);return}if(data.session){await refreshAuth();accountPanel();toast("Compte créé avec succès.")}else toast("Compte créé. Vérifiez votre e-mail pour confirmer l'inscription.")});
+  $("#acc-login").onclick=guardedAdminButton($("#acc-login"),async()=>{const email=$("#acc-email").value.trim(),password=$("#acc-password").value;if(!email||!password){toast("Saisissez votre e-mail et votre mot de passe.");return}const {error}=await db.auth.signInWithPassword({email,password});if(error){toast("Connexion refusée : "+error.message);return}await refreshAuth();accountPanel();toast("Bienvenue sur Rmi-Dist.")});
  }else{
   host.innerHTML=`<div class="admin-panel"><p class="admin-hint">Connecté avec ${esc(currentUser.email||"votre compte")}</p><h4>Mes commandes</h4><div id="customer-orders">Chargement…</div><button class="btn btn-light full" id="acc-logout">Me déconnecter</button></div>`;
   loadCustomerOrders();
-  $("#acc-logout").onclick=async()=>{await db.auth.signOut();await refreshAuth();accountPanel();toast("Vous êtes déconnecté.")};
+  $("#acc-logout").onclick=guardedAdminButton($("#acc-logout"),async()=>{await db.auth.signOut();await refreshAuth();accountPanel();toast("Vous êtes déconnecté.")});
  }
  const adminLink=document.createElement("button");
  adminLink.className="admin-access-link";
@@ -136,40 +323,63 @@ async function loadCustomerOrders(){
 }
 
 function modal(open){$("#admin-modal").classList.toggle("open",open);$("#modal-backdrop").classList.toggle("open",open)}
+function privacyModal(open){
+ $("#privacy-modal")?.classList.toggle("open",open);
+ $("#privacy-backdrop")?.classList.toggle("open",open);
+}
 function adminLogin(){
  $("#admin-content").innerHTML=`<div class="admin-panel"><p class="admin-hint">${configured()?"Connectez-vous avec le compte administrateur créé dans Supabase.":"Mode aperçu : le catalogue affiché est une démonstration locale. Configurez Supabase pour activer l'administration sécurisée et la base de données."}</p>${configured()?`<label>E-mail administrateur</label><input id="admin-email" type="email"><label>Mot de passe</label><input id="admin-password" type="password"><button class="btn btn-dark full" id="admin-login">Se connecter</button>`:`<button class="btn btn-dark full" id="admin-ok">Fermer</button>`}</div>`;
  if(!configured())$("#admin-ok").onclick=()=>modal(false);
- else $("#admin-login").onclick=async()=>{const {data,error}=await db.auth.signInWithPassword({email:$("#admin-email").value,password:$("#admin-password").value});if(error){toast("Connexion refusée : "+error.message);return}const {data:profile}=await db.from("profiles").select("role").eq("id",data.user.id).single();if(profile?.role!=="admin"){await db.auth.signOut();toast("Ce compte n'a pas le rôle administrateur.");return}isAdmin=true;adminDashboard()};
+ else $("#admin-login").onclick=guardedAdminButton($("#admin-login"),async()=>{const {data,error}=await db.auth.signInWithPassword({email:$("#admin-email").value,password:$("#admin-password").value});if(error){toast("Connexion refusée : "+error.message);return}const {data:profile}=await db.from("profiles").select("role").eq("id",data.user.id).single();if(profile?.role!=="admin"){await db.auth.signOut();toast("Ce compte n'a pas le rôle administrateur.");return}isAdmin=true;adminDashboard()});
 }
 
-const ADMIN_CATEGORIES=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Bébé & Maman","Bien-être","Soins capillaires","Produits naturels"];
+const ADMIN_CATEGORIES=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Produits Maman & Bébé","Bien-être","Produits Naturels","Promotions","Soins Capillaires"];
 const ORDER_STATUSES=["pending","confirmed","preparing","shipped","delivered","cancelled"];
 const statusLabel=s=>({pending:"En attente",confirmed:"Confirmée",preparing:"En préparation",shipped:"Expédiée",delivered:"Livrée",cancelled:"Annulée"}[s]||s||"—");
 function adminDashboard(){
  adminTab="overview";
  $("#admin-modal").classList.add("admin-modal-wide");
- $("#admin-content").innerHTML=`<div class="admin-shell"><div class="admin-topline"><div><p class="eyebrow">CENTRE DE PILOTAGE</p><h3>Gestion Rmi-Dist</h3><p class="admin-hint">Vue centralisée de votre activité commerciale. Les données proviennent de Supabase.</p></div><button class="btn btn-light" id="admin-refresh">Actualiser</button></div><nav class="admin-tabs" aria-label="Navigation administration"><button data-admin-tab="overview" class="active">Vue générale</button><button data-admin-tab="orders">Commandes</button><button data-admin-tab="customers">Clients</button><button data-admin-tab="products">Produits</button><button data-admin-tab="promotion">Promotions</button><button data-admin-tab="reports">Rapports</button></nav><div id="admin-workspace"><div class="admin-loading">Chargement des données commerciales…</div></div><div class="admin-footer"><span>Session administrateur sécurisée</span><button class="btn btn-light" id="admin-logout">Déconnexion</button></div></div>`;
+ $("#admin-content").innerHTML=`<div class="admin-shell"><div class="admin-topline"><div><p class="eyebrow">CENTRE DE PILOTAGE</p><h3>Gestion Rmi-Dist</h3><p class="admin-hint">Vue centralisée de votre activité commerciale. Les données proviennent de Supabase.</p></div><button class="btn btn-light" id="admin-refresh">Actualiser</button></div><nav class="admin-tabs" aria-label="Navigation administration"><button data-admin-tab="overview" class="active">Vue générale</button><button data-admin-tab="orders">Commandes</button><button data-admin-tab="customers">Clients</button><button data-admin-tab="products">Produits</button><button data-admin-tab="stock">Stock</button><button data-admin-tab="returns">Retours & échanges</button><button data-admin-tab="losses">Pertes</button><button data-admin-tab="promotion">Promotions</button><button data-admin-tab="advertisements">Annonces</button><button data-admin-tab="reports">Rapports</button></nav><div id="admin-workspace"><div class="admin-loading">Chargement des données commerciales…</div></div><div class="admin-footer"><span>Session administrateur sécurisée</span><button class="btn btn-light" id="admin-logout">Déconnexion</button></div></div>`;
  $("#admin-refresh").onclick=loadAdminData;
- $("#admin-logout").onclick=async()=>{await db.auth.signOut();isAdmin=false;$("#admin-modal").classList.remove("admin-modal-wide");adminLogin()};
+ $("#admin-logout").onclick=guardedAdminButton($("#admin-logout"),async()=>{const {error}=await db.auth.signOut();if(error)throw error;isAdmin=false;$("#admin-modal").classList.remove("admin-modal-wide");adminLogin()});
  loadAdminData();
+}
+async function fetchAllAdminRows(table,orderColumn="created_at"){
+ let rows=[],offset=0,pageSize=500;
+ while(true){
+  const {data,error}=await db.from(table).select("*").order(orderColumn,{ascending:false}).range(offset,offset+pageSize-1);
+  if(error)throw error;
+  rows=rows.concat(data||[]);
+  if(!data||data.length<pageSize)break;
+  offset+=pageSize;
+ }
+ return {data:rows,error:null};
 }
 async function loadAdminData(){
  if(!db||!isAdmin)return;
- const [ordersRes,productsRes,customersRes,promoRes]=await Promise.all([
-  db.from("orders").select("*").order("created_at",{ascending:false}).limit(2000),
-  db.from("products").select("*").order("created_at",{ascending:false}).limit(1000),
-  db.from("customers").select("*").order("last_order_at",{ascending:false}).limit(5000),
-  db.from("promotion_settings").select("*").eq("id",1).maybeSingle()
+ const [ordersRes,productsRes,customersRes,promoRes,movementsRes,returnsRes,exchangesRes,lossesRes]=await Promise.all([
+  fetchAllAdminRows("orders"),
+  fetchAllProducts(false).then(data=>({data,error:null})).catch(error=>({data:null,error})),
+  fetchAllAdminRows("customers","last_order_at"),
+  db.from("promotion_settings").select("*").eq("id",1).maybeSingle(),
+  fetchAllAdminRows("stock_movements"),
+  fetchAllAdminRows("order_returns"),
+  fetchAllAdminRows("product_exchanges"),
+  fetchAllAdminRows("stock_losses")
  ]);
- if(ordersRes.error||productsRes.error||customersRes.error){$("#admin-workspace").innerHTML=`<div class="admin-error">Impossible de charger les données : ${esc(ordersRes.error?.message||productsRes.error?.message||customersRes.error?.message||'Erreur Supabase')}. Vérifiez la migration professionnelle V6.</div>`;return}
+ const failed=[ordersRes,productsRes,customersRes,movementsRes,returnsRes,exchangesRes,lossesRes].find(x=>x.error);
+ if(failed){$("#admin-workspace").innerHTML=`<div class="admin-error">Impossible de charger les données : ${esc(failed.error.message)}.</div>`;return}
  adminOrders=ordersRes.data||[];adminProducts=productsRes.data||[];adminCustomers=customersRes.data||[];adminPromo=promoRes.data||null;adminPromoError=promoRes.error?.message||null;
+ adminStockMovements=movementsRes.data||[];adminReturns=returnsRes.data||[];adminExchanges=exchangesRes.data||[];adminLosses=lossesRes.data||[];
  if(adminPromo)promoConfig=adminPromo;
  renderAdminTab();
 }
-function isRevenueOrder(o){return o.status==='delivered'||o.payment_status==='paid'}
+function isRevenueOrder(o){return o.status!=='cancelled'&&(o.status==='delivered'||o.payment_status==='paid')}
 function orderDate(o){return new Date(o.created_at||Date.now())}
 function customerRows(){return adminCustomers}
-function filteredOrders(){const from=$("#report-from")?.value,to=$("#report-to")?.value;return adminOrders.filter(o=>{const d=orderDate(o);return (!from||d>=new Date(from+'T00:00:00'))&&(!to||d<=new Date(to+'T23:59:59'))})}
+function localDateString(date){const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,"0"),d=String(date.getDate()).padStart(2,"0");return `${y}-${m}-${d}`}
+function dateWithinReportRange(value,from,to){const d=new Date(value);if(!Number.isFinite(d.getTime()))return false;const start=from?new Date(from+"T00:00:00"):null,end=to?new Date(to+"T00:00:00"):null;if(end)end.setDate(end.getDate()+1);return (!start||d>=start)&&(!end||d<end)}
+function filteredOrders(){const from=$("#report-from")?.value,to=$("#report-to")?.value;return adminOrders.filter(o=>dateWithinReportRange(orderDate(o),from,to))}
 function parseCSV(text){
  const first=(text.split(/\r?\n/,1)[0]||"");
  const delimiters=[";",",","\t"];const delimiter=delimiters.sort((a,b)=>first.split(b).length-first.split(a).length)[0];
@@ -183,11 +393,13 @@ function parseCSV(text){
 function csvCell(v){const s=String(v??'');return /[;"\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
 function downloadProductCSVTemplate(){const content='sku;name;brand;category;description;price;promo_price;image_url;published\r\nPRD-1001;Crème hydratante;Nivea;Cosmétiques & Beauté;Crème visage;85;75;;true\r\n';const blob=new Blob(['\uFEFF',content],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='modele-produits-pararmidist.csv';a.click();URL.revokeObjectURL(url)}
 function csvRowToProduct(r){
- const name=r.name||'',category=r.category||'',priceRaw=r.price??'';const price=Number(priceRaw);
- if(!name||!category||priceRaw===''||!Number.isFinite(price)||price<0)throw new Error('Nom, catégorie et prix valide sont obligatoires.');
- const out={name,category,price,updated_at:new Date().toISOString()};
- for(const key of ['sku','brand','description','image_url'])if(r[key]!==undefined&&r[key]!== '')out[key]=r[key];
- if(r.promo_price!==undefined&&r.promo_price!==''){const promo=Number(r.promo_price);if(!Number.isFinite(promo)||promo<0||promo>=price)throw new Error('Prix promotionnel invalide.');out.promo_price=promo}else if(r.promo_price===''){};
+ const name=r.name||'',categoryRaw=r.category||'',priceRaw=r.price??'';const price=Number(priceRaw);
+ const mainCategory=categories.find(c=>normalizeText(c.name)===normalizeText(categoryRaw));
+ if(!name||!mainCategory||priceRaw===''||!Number.isFinite(price)||price<=0)throw new Error('Nom, catégorie principale valide et prix sont obligatoires.');
+ const out={name,category:mainCategory.name,category_id:mainCategory.id,price,updated_at:new Date().toISOString()};
+ if(r.subcategory){const sub=subcategories.find(c=>normalizeText(c.name)===normalizeText(r.subcategory)&&String(c.category_id)===String(mainCategory.id));if(!sub)throw new Error('Sous-catégorie inconnue pour cette catégorie principale.');out.subcategory_id=sub.id}
+ for(const key of ['sku','brand','description','image_url'])if(r[key]!==undefined&&r[key]!== '')out[key]=String(r[key]).trim();
+ if(Object.prototype.hasOwnProperty.call(r,'promo_price')){if(r.promo_price==='')out.promo_price=null;else{const promo=Number(r.promo_price);if(!Number.isFinite(promo)||promo<=0||promo>=price)throw new Error('Prix promotionnel invalide.');out.promo_price=promo}}
  // Le stock est volontairement ignoré : les ventes sont indépendantes de tout inventaire.
  if(r.published!==undefined&&r.published!==''){const v=r.published.toLowerCase();if(!['true','false','1','0','oui','non'].includes(v))throw new Error('published doit être true/false ou oui/non.');out.published=['true','1','oui'].includes(v)}
  return out;
@@ -199,8 +411,12 @@ async function runCSVImport(){
  btn.disabled=true;btn.textContent='Importation…';let inserted=0,updated=0,skipped=0,failed=csvValidationErrors.slice();const rows=csvImportRows.slice();
  try{
   const withSku=rows.filter(x=>x.sku),withoutSku=rows.filter(x=>!x.sku);
-  for(let i=0;i<withSku.length;i+=100){const batch=withSku.slice(i,i+100);const skus=batch.map(x=>x.sku);let existing=[];const {data:found,error:findError}=await db.from('products').select('id,sku').in('sku',skus);if(findError)throw findError;existing=found||[];const existingMap=new Map(existing.map(x=>[String(x.sku).toLowerCase(),x]));const existingSet=new Set(existingMap.keys());let payload=batch.map(({_line,...x})=>x);if(!updateExisting){const before=payload.length;payload=payload.filter(x=>!existingSet.has(String(x.sku).toLowerCase()));skipped+=before-payload.length;}else updated+=payload.filter(x=>existingSet.has(String(x.sku).toLowerCase())).length;
-   if(payload.length){const {error}=await db.from('products').upsert(payload,{onConflict:'sku'});if(error){for(const x of batch)failed.push(`Ligne ${x._line} : ${error.message}`)}else inserted+=payload.length-(updateExisting?payload.filter(x=>existingSet.has(String(x.sku).toLowerCase())).length:0)}
+  // Charger tous les SKU existants par pages : .in('sku', ...) est sensible à la casse et ne détecte pas les variantes.
+  const existingMap=new Map();let skuOffset=0;const skuPageSize=500;
+  while(true){const {data:found,error:findError}=await db.from('products').select('id,sku').not('sku','is',null).order('id',{ascending:true}).range(skuOffset,skuOffset+skuPageSize-1);if(findError)throw findError;for(const product of found||[]){const key=String(product.sku||'').trim().toLowerCase();if(key)existingMap.set(key,product)}if(!found||found.length<skuPageSize)break;skuOffset+=skuPageSize;}
+  const existingSet=new Set(existingMap.keys());
+  for(let i=0;i<withSku.length;i+=100){const batch=withSku.slice(i,i+100);let payload=batch.map(({_line,...x})=>{const key=String(x.sku||'').trim().toLowerCase();const existingProduct=existingMap.get(key);return {...x,sku:updateExisting&&existingProduct?existingProduct.sku:String(x.sku||'').trim()}});if(!updateExisting){const before=payload.length;payload=payload.filter(x=>!existingSet.has(String(x.sku).trim().toLowerCase()));skipped+=before-payload.length;}
+   if(payload.length){const updateCount=updateExisting?payload.filter(x=>existingSet.has(String(x.sku).trim().toLowerCase())).length:0;const {error}=await db.from('products').upsert(payload,{onConflict:'sku'});if(error){for(const x of batch)failed.push(`Ligne ${x._line} : ${error.message}`)}else{updated+=updateCount;inserted+=payload.length-updateCount}}
    btn.textContent=`Importation ${Math.min(i+100,withSku.length)}/${withSku.length+withoutSku.length}…`;
   }
   for(let i=0;i<withoutSku.length;i+=100){const batch=withoutSku.slice(i,i+100).map(({_line,...x})=>x);const {error}=await db.from('products').insert(batch);if(error)failed.push(`Produits sans SKU (lot ${Math.floor(i/100)+1}) : ${error.message}`);else inserted+=batch.length;btn.textContent=`Importation ${withSku.length+Math.min(i+100,withoutSku.length)}/${rows.length}…`}
@@ -223,17 +439,40 @@ function renderAdminTab(){
   host.innerHTML=`<div class="admin-section-head"><div><h4>Fichier clients</h4><p>Fiches reconstituées à partir des commandes existantes, comptes et invités confondus.</p></div><input id="customers-search" placeholder="Rechercher un client…"></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Client</th><th>Contact</th><th>Ville</th><th>Commandes</th><th>CA livré / payé</th><th>Dernière commande</th></tr></thead><tbody id="customers-table-body">${customers.map(customerTableRow).join('')||'<tr><td colspan="6">Aucun client identifié.</td></tr>'}</tbody></table></div><p class="admin-note">Les clients invités sont identifiés par leur téléphone. Les comptes authentifiés restent dans Supabase Authentication. Aucun compte client n'est créé automatiquement par ce tableau.</p>`;
   $("#customers-search").oninput=()=>{const q=$("#customers-search").value.toLowerCase();$("#customers-table-body").innerHTML=customers.filter(c=>[c.full_name,c.phone,c.email,c.city].join(' ').toLowerCase().includes(q)).map(customerTableRow).join('')};
  } else if(adminTab==='products'){
-  const opts=ADMIN_CATEGORIES.map(c=>`<option>${esc(c)}</option>`).join('');
-  host.innerHTML=`<div class="admin-section-head"><div><h4>Catalogue produits</h4><p>Vente directe : aucun stock n’est suivi ni contrôlé. Nom, catégorie et prix sont obligatoires.</p></div><span class="admin-count">${adminProducts.length} produits</span></div><section class="admin-card csv-import-card"><div class="admin-card-head"><h4>Importation massive CSV</h4><button type="button" id="csv-template" class="admin-edit">Télécharger le modèle CSV</button></div><p class="admin-note">Importez 1 000 produits ou plus. Colonnes utiles : name, category, price, promo_price, SKU, marque, description, image_url, published. Toute colonne stock éventuelle est ignorée. Séparateur ; ou , accepté. Traitement par lots de 100.</p><div class="csv-import-controls"><label>Choisir un fichier CSV<input type="file" id="csv-file" accept=".csv,text/csv"></label><label class="csv-update-option"><input type="checkbox" id="csv-update-existing"> Actualiser les produits existants si le SKU existe</label></div><div id="csv-preview" class="csv-preview" aria-live="polite">Aucun fichier sélectionné.</div><button type="button" class="btn btn-dark" id="csv-run" disabled>Confirmer l’importation</button></section><div class="admin-product-form"><label>Nom du produit<input id="p-name" placeholder="Nom du produit" required></label><label>Catégorie<select id="p-category">${opts}</select></label><label>Prix de vente (MAD)<input id="p-price" type="number" min="0.01" step="0.01" placeholder="129" required></label><label>Marque (facultatif)<input id="p-brand" placeholder="Marque"></label><label>Référence SKU (facultatif)<input id="p-sku" placeholder="Référence"></label><label>Prix promotionnel (facultatif)<input id="p-promo" type="number" min="0.01" step="0.01" placeholder="Vide si aucune promotion"></label><label>URL photo (facultatif)<input id="p-image" type="url" placeholder="https://…"></label><label class="wide">Description (facultatif)<textarea id="p-desc"></textarea></label><input id="p-id" type="hidden"><button class="btn btn-dark" id="p-save">Ajouter le produit</button><button class="btn btn-light" id="p-cancel-edit" type="button" hidden>Annuler</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Produit</th><th>Catégorie</th><th>Prix</th><th>Promotion</th><th>Publication</th><th></th></tr></thead><tbody>${adminProducts.map(p=>`<tr><td><b>${esc(p.name)}</b><small>${esc(p.sku||'Sans référence')}</small></td><td>${esc(p.category)}</td><td>${money(p.price)}</td><td>${p.promo_price?money(p.promo_price):'—'}</td><td>${p.published?'Publié':'Masqué'}</td><td><button class="admin-edit" data-edit-product="${esc(p.id)}">Modifier</button> <button class="admin-danger" data-delete="${esc(p.id)}">Supprimer</button></td></tr>`).join('')||'<tr><td colspan="6">Aucun produit.</td></tr>'}</tbody></table></div>`;
-  $("#p-save").onclick=saveAdminProduct;
-  $("#p-cancel-edit").onclick=()=>{["p-id","p-name","p-brand","p-sku","p-price","p-promo","p-image","p-desc"].forEach(id=>$("#"+id).value="");$("#p-save").textContent="Ajouter le produit";$("#p-cancel-edit").hidden=true};
+  const opts=categories.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  const subOpts=subcategories.map(c=>`<option value="${esc(c.id)}" data-parent-category="${esc(c.category_id)}">${esc(c.name)}</option>`).join('');
+  host.innerHTML=`<div class="admin-section-head"><div><h4>Catalogue produits</h4><p>Ajoutez vos produits manuellement ou importez un catalogue. Le stock initial est défini lors de la création.</p></div><span class="admin-count">${adminProducts.length} produits</span></div><section class="admin-card csv-import-card"><div class="admin-card-head"><h4>Importation massive CSV</h4><button type="button" id="csv-template" class="admin-edit">Télécharger le modèle CSV</button></div><p class="admin-note">Importez 1 000 produits ou plus. Colonnes utiles : name, category, price, promo_price, SKU, marque, description, image_url, published. Toute colonne stock éventuelle est ignorée. Séparateur ; ou , accepté. Traitement par lots de 100.</p><div class="csv-import-controls"><label>Choisir un fichier CSV<input type="file" id="csv-file" accept=".csv,text/csv"></label><label class="csv-update-option"><input type="checkbox" id="csv-update-existing"> Actualiser les produits existants si le SKU existe</label></div><div id="csv-preview" class="csv-preview" aria-live="polite">Aucun fichier sélectionné.</div><button type="button" class="btn btn-dark" id="csv-run" disabled>Confirmer l’importation</button></section><div class="admin-product-form"><label>Nom du produit<input id="p-name" placeholder="Nom du produit" required></label><label>Catégorie principale<select id="p-category">${opts}</select></label><label>Sous-catégorie<select id="p-subcategory"><option value="">Choisir une sous-catégorie</option>${subOpts}</select></label><label>Prix de vente (MAD)<input id="p-price" type="number" min="0.01" step="0.01" placeholder="129" required></label><label>Stock initial (unités)<input id="p-stock" type="number" min="0" step="1" value="0" required></label><label>Marque (facultatif)<input id="p-brand" placeholder="Marque"></label><label>Référence SKU (facultatif)<input id="p-sku" placeholder="Référence"></label><label>Prix promotionnel (facultatif)<input id="p-promo" type="number" min="0.01" step="0.01" placeholder="Vide si aucune promotion"></label><label>URL photo (facultatif)<input id="p-image" type="url" placeholder="https://…"></label><label class="wide admin-toggle"><input id="p-featured" type="checkbox"> Afficher dans Produits vedette</label><label>Ordre vedette<input id="p-featured-sort" type="number" step="1" value="0"></label><label class="wide">Description (facultatif)<textarea id="p-desc"></textarea></label><input id="p-id" type="hidden"><button class="btn btn-dark" id="p-save">Ajouter le produit</button><button class="btn btn-light" id="p-cancel-edit" type="button" hidden>Annuler</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Produit</th><th>Catégorie</th><th>Prix</th><th>Promotion</th><th>Stock</th><th>Publication</th><th></th></tr></thead><tbody>${adminProducts.map(p=>`<tr><td><b>${esc(p.name)}</b><small>${esc(p.sku||'Sans référence')}</small></td><td>${esc(p.category)}</td><td>${money(p.price)}</td><td>${p.promo_price?money(p.promo_price):'—'}</td><td><strong>${Number(p.stock||0)}</strong> ${Number(p.stock||0)<=0?'<span class="stock-status stock-status-out">Rupture de stock</span>':Number(p.stock||0)<=5?'<span class="stock-status stock-status-low">Stock faible</span>':'<span class="stock-status stock-status-ok">En stock</span>'}</td><td>${p.published?'Publié':'Masqué'}</td><td><button class="admin-edit" data-edit-product="${esc(p.id)}">Modifier</button> <button class="admin-danger" data-delete="${esc(p.id)}">Masquer</button></td></tr>`).join('')||'<tr><td colspan="6">Aucun produit.</td></tr>'}</tbody></table></div>`;
+  $("#p-category").onchange=()=>{const id=$("#p-category").value;const sub=$("#p-subcategory");[...sub.options].forEach(o=>{if(o.value)o.hidden=o.dataset.parentCategory!==id});if(sub.selectedOptions[0]?.hidden)sub.value=""};
+  $("#p-category").dispatchEvent(new Event("change"));
+  $("#p-save").onclick=guardedAdminButton($("#p-save"),saveAdminProduct);
+  $("#p-cancel-edit").onclick=()=>{["p-id","p-name","p-brand","p-sku","p-price","p-promo","p-image","p-desc"].forEach(id=>$("#"+id).value="");$("#p-stock").value="0";$("#p-stock").disabled=false;$("#p-save").textContent="Ajouter le produit";$("#p-cancel-edit").hidden=true};
+ } else if(adminTab==='stock'){
+  const choices=adminProducts.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} · ${Number(p.stock||0)<=0?"RUPTURE DE STOCK":`Stock : ${Number(p.stock||0)}`}</option>`).join('');
+  host.innerHTML=`<div class="admin-section-head"><div><h4>Gestion du stock</h4><p>Les ventes, retours et échanges mettent à jour le stock automatiquement.</p></div><span class="admin-count">${adminProducts.filter(p=>Number(p.stock)>0).length} références en stock</span></div><div class="admin-card"><h4>Ajustement manuel</h4><label>Produit<select id="stock-product">${choices}</select></label><label>Quantité à ajouter / retirer<input id="stock-quantity" type="number" step="1" placeholder="Ex. 5 ou -2"></label><label>Motif<input id="stock-reason" placeholder="Inventaire / correction"></label><button class="btn btn-dark" id="stock-adjust">Enregistrer l'ajustement</button></div><div class="admin-card"><h4>Historique des mouvements</h4><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Produit</th><th>Mouvement</th><th>Quantité</th><th>Référence</th></tr></thead><tbody>${adminStockMovements.map(m=>{const p=adminProducts.find(x=>String(x.id)===String(m.product_id));return `<tr><td>${new Date(m.created_at).toLocaleString('fr-MA')}</td><td>${esc(p?.name||m.product_id)}</td><td>${esc(m.movement_type)}</td><td>${Number(m.quantity_change)>0?'+':''}${m.quantity_change}</td><td>${esc(m.reference_key)}</td></tr>`}).join('')||'<tr><td colspan="5">Aucun mouvement.</td></tr>'}</tbody></table></div></div>`;
+  $("#stock-adjust").onclick=guardedAdminButton($("#stock-adjust"),async()=>{const productId=$("#stock-product").value,qty=Number($("#stock-quantity").value),reason=$("#stock-reason").value.trim();if(!productId||!Number.isInteger(qty)||qty===0||!reason){toast("Produit, quantité entière non nulle et motif obligatoires.");return}const {error}=await db.from("stock_movements").insert({product_id:productId,movement_type:"adjustment",quantity_change:qty,reason,reference_key:"adjustment:"+crypto.randomUUID(),created_by:currentUser?.id||null});if(error){toast("Ajustement refusé : "+error.message);return}toast("Stock ajusté.");await loadProducts();await loadAdminData();adminTab="stock";renderAdminTab()});
+ } else if(adminTab==='returns'){
+  const orderChoices=adminOrders.map(o=>`<option value="${esc(o.id)}">${esc(o.order_number||String(o.id).slice(0,8))} · ${esc(o.customer_name)}</option>`).join('');
+  const productChoices=adminProducts.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  host.innerHTML=`<div class="admin-card"><h4>Enregistrer un retour</h4><label>Commande<select id="return-order">${orderChoices}</select></label><label>Produit retourné<select id="return-product">${productChoices}</select></label><label>Quantité<input id="return-qty" type="number" min="1" value="1"></label><label>Motif<input id="return-reason" placeholder="Retour client"></label><label>Note facultative<textarea id="return-note"></textarea></label><button class="btn btn-dark" id="return-save">Valider le retour et réintégrer le stock</button></div><div class="admin-card"><h4>Enregistrer un échange</h4><label>Commande<select id="exchange-order">${orderChoices}</select></label><label>Ancien produit<select id="exchange-old">${productChoices}</select></label><label>Nouveau produit<select id="exchange-new">${productChoices}</select></label><label>Quantité<input id="exchange-qty" type="number" min="1" value="1"></label><label>Note facultative<textarea id="exchange-note"></textarea></label><button class="btn btn-dark" id="exchange-save">Valider l'échange</button></div><div class="admin-card"><h4>Historique des retours</h4><p>${adminReturns.length} retour(s) · ${adminExchanges.length} échange(s)</p><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Commande</th><th>Produit</th><th>Quantité</th><th>Motif</th></tr></thead><tbody>${adminReturns.map(r=>{const p=adminProducts.find(x=>String(x.id)===String(r.product_id)),o=adminOrders.find(x=>String(x.id)===String(r.order_id));return "<tr><td>"+new Date(r.created_at).toLocaleDateString("fr-MA")+"</td><td>"+esc(o?.order_number||String(r.order_id).slice(0,8))+"</td><td>"+esc(p?.name||r.product_id)+"</td><td>"+r.quantity+"</td><td>"+esc(r.reason||"—")+"</td></tr>"}).join("")||"<tr><td colspan=\"5\">Aucun retour enregistré.</td></tr>"}</tbody></table></div></div><div class="admin-card"><h4>Historique des échanges</h4><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Commande</th><th>Produit retourné</th><th>Produit remis</th><th>Quantité</th></tr></thead><tbody>${adminExchanges.map(x=>{const oldProduct=adminProducts.find(p=>String(p.id)===String(x.returned_product_id)),newProduct=adminProducts.find(p=>String(p.id)===String(x.replacement_product_id)),o=adminOrders.find(p=>String(p.id)===String(x.order_id));return "<tr><td>"+new Date(x.created_at).toLocaleDateString("fr-MA")+"</td><td>"+esc(o?.order_number||String(x.order_id).slice(0,8))+"</td><td>"+esc(oldProduct?.name||x.returned_product_id)+"</td><td>"+esc(newProduct?.name||x.replacement_product_id)+"</td><td>"+x.quantity+"</td></tr>"}).join("")||"<tr><td colspan=\"5\">Aucun échange enregistré.</td></tr>"}</tbody></table></div></div>`;
+  $("#return-save").onclick=guardedAdminButton($("#return-save"),async()=>{const order_id=$("#return-order").value,product_id=$("#return-product").value,quantity=Number($("#return-qty").value),reason=$("#return-reason").value.trim();if(!order_id||!product_id||!Number.isInteger(quantity)||quantity<1||!reason){toast("Complétez les informations du retour.");return}const {error}=await db.from("order_returns").insert({order_id,product_id,quantity,reason,notes:$("#return-note").value.trim()||null,idempotency_key:"return:"+crypto.randomUUID(),created_by:currentUser?.id||null});if(error){toast("Retour refusé : "+error.message);return}toast("Retour enregistré et stock réintégré.");await loadProducts();await loadAdminData();adminTab="returns";renderAdminTab()});
+  $("#exchange-save").onclick=guardedAdminButton($("#exchange-save"),async()=>{const order_id=$("#exchange-order").value,returned_product_id=$("#exchange-old").value,replacement_product_id=$("#exchange-new").value,quantity=Number($("#exchange-qty").value);if(!order_id||!returned_product_id||!replacement_product_id||returned_product_id===replacement_product_id||!Number.isInteger(quantity)||quantity<1){toast("Vérifiez les produits et la quantité de l'échange.");return}const {error}=await db.from("product_exchanges").insert({order_id,returned_product_id,replacement_product_id,quantity,notes:$("#exchange-note").value.trim()||null,idempotency_key:"exchange:"+crypto.randomUUID(),created_by:currentUser?.id||null});if(error){toast("Échange refusé : "+error.message);return}toast("Échange enregistré.");await loadProducts();await loadAdminData();adminTab="returns";renderAdminTab()});
+ } else if(adminTab==='losses'){
+  const choices=adminProducts.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} · Stock : ${Number(p.stock||0)}</option>`).join('');
+  host.innerHTML=`<div class="admin-card"><h4>Déclarer une perte</h4><label>Produit<select id="loss-product">${choices}</select></label><label>Quantité perdue<input id="loss-qty" type="number" min="1" value="1"></label><label>Motif<select id="loss-reason"><option value="casse">Cassé</option><option value="expire">Expiré</option><option value="endommage">Endommagé</option><option value="perdu">Perdu</option><option value="inutilisable">Inutilisable</option></select></label><label>Coût d'achat unitaire (MAD)<input id="loss-cost" type="number" min="0" step="0.01" value="0"></label><label>Note facultative<textarea id="loss-note"></textarea></label><button class="btn btn-dark" id="loss-save">Enregistrer la perte et déduire le stock</button></div><div class="admin-card"><h4>Historique des pertes</h4><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Produit</th><th>Quantité</th><th>Motif</th><th>Valeur</th></tr></thead><tbody>${adminLosses.map(l=>{const p=adminProducts.find(x=>String(x.id)===String(l.product_id));return `<tr><td>${new Date(l.created_at).toLocaleDateString('fr-MA')}</td><td>${esc(p?.name||l.product_id)}</td><td>${l.quantity}</td><td>${esc(l.reason)}</td><td>${money(l.loss_value)}</td></tr>`}).join('')||'<tr><td colspan="5">Aucune perte enregistrée.</td></tr>'}</tbody></table></div></div>`;
+  $("#loss-save").onclick=guardedAdminButton($("#loss-save"),async()=>{const product_id=$("#loss-product").value,quantity=Number($("#loss-qty").value),unit_cost=Number($("#loss-cost").value),reason=$("#loss-reason").value;if(!product_id||!Number.isInteger(quantity)||quantity<1||!Number.isFinite(unit_cost)||unit_cost<0){toast("Vérifiez le produit, la quantité et le coût.");return}const {error}=await db.from("stock_losses").insert({product_id,quantity,reason,unit_cost,notes:$("#loss-note").value.trim()||null,idempotency_key:"loss:"+crypto.randomUUID(),created_by:currentUser?.id||null});if(error){toast("Perte refusée : "+error.message);return}toast("Perte enregistrée et stock déduit.");await loadProducts();await loadAdminData();adminTab="losses";renderAdminTab()});
  } else if(adminTab==='promotion'){
-  const pr=adminPromo||{active:true,discount_rate:5,starts_at:null,ends_at:null};
-  host.innerHTML=`${adminPromoError?`<div class="admin-error">La table de campagne n’est pas disponible. Exécutez la migration 20261122_professional_commerce.sql dans Supabase. Détail : ${esc(adminPromoError)}</div>`:''}<div class="admin-card promotion-editor"><h4>Campagne Rmi-Dist</h4><p>La remise générale s'applique uniquement aux produits sans prix promotionnel. Un article déjà en promotion ne reçoit pas une deuxième réduction.</p><label class="admin-toggle"><input id="promo-active" type="checkbox" ${pr.active?'checked':''}> Campagne active</label><label>Taux de remise (%)<input id="promo-rate" type="number" min="0" max="90" step="0.5" value="${Number(pr.discount_rate||5)}"></label><div class="admin-form-grid"><label>Début de la campagne<input id="promo-start" type="datetime-local" value="${toLocalInput(pr.starts_at)}"></label><label>Fin de la campagne<input id="promo-end" type="datetime-local" value="${toLocalInput(pr.ends_at)}"></label></div><button class="btn btn-dark" id="promo-save">Enregistrer la campagne</button><p class="admin-note">Le serveur recalcule les prix et la remise au moment de la commande. Le montant envoyé par le navigateur n'est jamais considéré comme fiable.</p></div>`;
-  $("#promo-save").onclick=savePromotion;
- } else if(adminTab==='reports'){
-  host.innerHTML=`<div class="admin-section-head"><div><h4>Rapports commerciaux</h4><p>Choisissez une période pour analyser les commandes et les ventes.</p></div><button class="btn btn-light" id="report-print">Imprimer / Enregistrer en PDF</button></div><div class="report-filters"><label>Du<input id="report-from" type="date"></label><label>Au<input id="report-to" type="date"></label><button class="btn btn-dark" id="report-apply">Appliquer</button></div><div id="report-result">${renderReportHtml(adminOrders)}</div>`;
+  const pr=adminPromo||{active:false,discount_rate:5,starts_at:null,ends_at:null};
+  host.innerHTML=`${adminPromoError?`<div class="admin-error">La table de campagne n’est pas disponible. Exécutez la migration 20261122_professional_commerce.sql dans Supabase. Détail : ${esc(adminPromoError)}</div>`:''}<div class="admin-card promotion-editor"><h4>Campagne Rmi-Dist</h4><p>La remise générale s'applique uniquement aux produits sans prix promotionnel. Un article déjà en promotion ne reçoit pas une deuxième réduction.</p><label class="admin-toggle"><input id="promo-active" type="checkbox" ${pr.active?'checked':''}> Campagne active</label><label>Taux de remise (%)<input id="promo-rate" type="number" min="0" max="90" step="0.5" value="${Number(pr.discount_rate??5)}"></label><div class="admin-form-grid"><label>Début de la campagne<input id="promo-start" type="datetime-local" value="${toLocalInput(pr.starts_at)}"></label><label>Fin de la campagne<input id="promo-end" type="datetime-local" value="${toLocalInput(pr.ends_at)}"></label></div><button class="btn btn-dark" id="promo-save">Enregistrer la campagne</button><p class="admin-note">Le serveur recalcule les prix et la remise au moment de la commande. Le montant envoyé par le navigateur n'est jamais considéré comme fiable.</p></div>`;
+  $("#promo-save").onclick=guardedAdminButton($("#promo-save"),savePromotion);
+ } else if(adminTab==='advertisements'){
+ host.innerHTML='<div class="admin-card"><h4>Publier une annonce publicitaire</h4><label>Titre<input id="ad-title" maxlength="120" required></label><label>Message<textarea id="ad-body" maxlength="500"></textarea></label><label>Image URL<input id="ad-image" type="url"></label><label>Lien URL<input id="ad-link" type="url"></label><label>Texte du bouton<input id="ad-button" maxlength="40" value="Découvrir"></label><div class="admin-form-grid"><label>Début<input id="ad-start" type="datetime-local"></label><label>Fin<input id="ad-end" type="datetime-local"></label><label>Ordre<input id="ad-sort" type="number" value="0"></label></div><label class="admin-toggle"><input id="ad-active" type="checkbox"> Publier maintenant</label><button class="btn btn-dark" id="ad-save">Enregistrer l’annonce</button></div><div class="admin-card"><h4>Annonces enregistrées</h4><div id="admin-ad-list">Chargement…</div></div>';
+ db.from('advertisements').select('*').order('sort_order',{ascending:true}).then(result=>{const list=$('#admin-ad-list');if(!list)return;if(result.error){list.textContent=result.error.message;return}list.innerHTML=(result.data||[]).map(a=>'<div class="admin-row"><span><b>'+esc(a.title)+'</b><br><small>'+(a.is_active?'Active':'Désactivée')+'</small></span><button class="admin-edit" data-ad-toggle="'+esc(a.id)+'" data-active="'+String(a.is_active)+'">'+(a.is_active?'Désactiver':'Activer')+'</button></div>').join('')||'Aucune annonce enregistrée.'});
+ $('#ad-save').onclick=guardedAdminButton($('#ad-save'),async()=>{const title=$('#ad-title').value.trim(),body=$('#ad-body').value.trim(),image_url=$('#ad-image').value.trim(),link_url=$('#ad-link').value.trim(),starts_at=$('#ad-start').value?new Date($('#ad-start').value).toISOString():null,ends_at=$('#ad-end').value?new Date($('#ad-end').value).toISOString():null,sort_order=Number($('#ad-sort').value||0);if(title.length<2||!Number.isInteger(sort_order)){toast('Titre et ordre valides obligatoires.');return}if(ends_at&&(!starts_at||new Date(ends_at)<=new Date(starts_at))){toast('La fin doit être après le début.');return}const {error}=await db.from('advertisements').insert({title,body:body||null,image_url:image_url||null,link_url:link_url||null,button_label:$('#ad-button').value.trim()||'Découvrir',starts_at,ends_at,sort_order,is_active:$('#ad-active').checked});if(error){toast('Erreur : '+error.message);return}toast('Annonce enregistrée.');await loadAdvertisements();adminTab='advertisements';renderAdminTab()});
+}
+else if(adminTab==='reports'){
+  host.innerHTML=`<div class="admin-section-head"><div><h4>Rapports commerciaux</h4><p>Choisissez une période pour analyser les commandes et les ventes.</p></div><button class="btn btn-light" id="report-print">Imprimer / Enregistrer en PDF</button></div><div class="report-filters"><button class="btn btn-light" data-report-preset="day">Aujourd’hui</button><button class="btn btn-light" data-report-preset="month">Ce mois</button><button class="btn btn-light" data-report-preset="year">Cette année</button><label>Du<input id="report-from" type="date"></label><label>Au<input id="report-to" type="date"></label><button class="btn btn-dark" id="report-apply">Appliquer</button></div><div id="report-result">${renderReportHtml(adminOrders)}</div>`;
   $("#report-apply").onclick=()=>{$("#report-result").innerHTML=renderReportHtml(filteredOrders())};
+  document.querySelectorAll("[data-report-preset]").forEach(btn=>btn.onclick=()=>{const now=new Date(),d=new Date(now);if(btn.dataset.reportPreset==="day"){d.setHours(0,0,0,0);$("#report-from").value=localDateString(d);$("#report-to").value=$("#report-from").value}else if(btn.dataset.reportPreset==="month"){d.setDate(1);$("#report-from").value=localDateString(d);$("#report-to").value=localDateString(now)}else{d.setMonth(0,1);$("#report-from").value=localDateString(d);$("#report-to").value=localDateString(now)}$("#report-result").innerHTML=renderReportHtml(filteredOrders())});
   $("#report-print").onclick=()=>window.print();
  }
 }
@@ -266,21 +505,48 @@ function printOrder(o){
 }
 function customerTableRow(c){return `<tr><td><b>${esc(c.full_name||'Client')}</b></td><td>${esc(c.phone||'')}<small>${esc(c.email||'')}</small></td><td>${esc(c.city||'')}</td><td>${Number(c.order_count||0)}</td><td><b>${money(c.total_spent)}</b></td><td>${c.last_order_at?new Date(c.last_order_at).toLocaleDateString('fr-MA'):'—'}</td></tr>`}
 function topProducts(orders){const map=new Map();orders.forEach(o=>(Array.isArray(o.items)?o.items:[]).forEach(i=>{const k=i.product_id||i.name;const x=map.get(k)||{name:i.name||'Produit',quantity:0,revenue:0};x.quantity+=Number(i.quantity||0);x.revenue+=Number(i.line_total??(Number(i.unit_price||0)*Number(i.quantity||0)));map.set(k,x)}));return [...map.values()].sort((a,b)=>b.quantity-a.quantity)}
-function renderReportHtml(orders){const paid=orders.filter(isRevenueOrder),revenue=paid.reduce((s,o)=>s+Number(o.total||0),0),discount=orders.reduce((s,o)=>s+Number(o.discount_amount||0),0),avg=paid.length?revenue/paid.length:0;return `<div class="admin-kpis"><article><span>CA livré / payé</span><b>${money(revenue)}</b></article><article><span>Commandes</span><b>${orders.length}</b></article><article><span>Panier moyen encaissé</span><b>${money(avg)}</b></article><article><span>Remises accordées</span><b>${money(discount)}</b></article></div><div class="admin-card"><h4>Produits les plus vendus</h4>${topProducts(orders.filter(isRevenueOrder)).slice(0,15).map(x=>`<div class="admin-ranking"><span>${esc(x.name)}</span><b>${x.quantity} unité(s)</b><strong>${money(x.revenue)}</strong></div>`).join('')||'<p class="admin-empty">Aucune vente sur cette période.</p>'}</div><p class="admin-note">Le chiffre d'affaires est fondé sur les commandes livrées ou payées. Les montants historiques antérieurs à la nouvelle migration ne contiendront pas de champ de remise séparé. La marge nette n'est pas calculée car les coûts d'achat ne sont pas encore enregistrés.</p>`}
+function renderReportHtml(orders){const paid=orders.filter(isRevenueOrder),revenue=paid.reduce((s,o)=>s+Number(o.total||0),0),discount=paid.reduce((s,o)=>s+Number(o.discount_amount||0),0),avg=paid.length?revenue/paid.length:0,from=$("#report-from")?.value,to=$("#report-to")?.value,inPeriod=x=>dateWithinReportRange(x.created_at,from,to),periodLosses=adminLosses.filter(inPeriod),periodReturns=adminReturns.filter(inPeriod),periodExchanges=adminExchanges.filter(inPeriod),lossValue=periodLosses.reduce((sum,l)=>sum+Number(l.loss_value||0),0);return `<div class="admin-kpis"><article><span>CA livré / payé</span><b>${money(revenue)}</b></article><article><span>Commandes</span><b>${orders.length}</b></article><article><span>Retours</span><b>${periodReturns.length}</b></article><article><span>Échanges</span><b>${periodExchanges.length}</b></article><article><span>Valeur des pertes</span><b>${money(lossValue)}</b></article><article><span>Remises accordées</span><b>${money(discount)}</b></article></div><div class="admin-card"><h4>Produits les plus vendus</h4>${topProducts(orders.filter(isRevenueOrder)).slice(0,15).map(x=>`<div class="admin-ranking"><span>${esc(x.name)}</span><b>${x.quantity} unité(s)</b><strong>${money(x.revenue)}</strong></div>`).join('')||'<p class="admin-empty">Aucune vente sur cette période.</p>'}</div><p class="admin-note">Le chiffre d'affaires est fondé sur les commandes livrées ou payées. Les montants historiques antérieurs à la nouvelle migration ne contiendront pas de champ de remise séparé. La marge nette n'est pas calculée car les coûts d'achat ne sont pas encore enregistrés.</p>`}
 async function saveAdminProduct(){
- const name=$("#p-name").value.trim(),category=$("#p-category").value,price=Number($("#p-price").value),promoRaw=$("#p-promo").value.trim(),promo=promoRaw===''?null:Number(promoRaw);
- if(!name||!ADMIN_CATEGORIES.includes(category)||!Number.isFinite(price)||price<=0){toast('Nom, catégorie et prix valide sont obligatoires.');return}
+ const name=$("#p-name").value.trim(),categoryId=$("#p-category").value,subcategoryId=$("#p-subcategory").value||null,category=categoryNameById(categoryId),price=Number($("#p-price").value),promoRaw=$("#p-promo").value.trim(),promo=promoRaw===''?null:Number(promoRaw);
+ if(!name||!categoryId||!category||!Number.isFinite(price)||price<=0){toast('Nom, catégorie principale et prix valide sont obligatoires.');return}
+ if(subcategoryId&&!subcategories.some(x=>String(x.id)===String(subcategoryId)&&String(x.category_id)===String(categoryId))){toast('La sous-catégorie ne correspond pas à la catégorie principale.');return}
  if(promo!==null&&(!Number.isFinite(promo)||promo<=0||promo>=price)){toast('Le prix promotionnel doit être supérieur à 0 et inférieur au prix normal.');return}
  const productId=$("#p-id").value;
  const existing=productId?adminProducts.find(x=>String(x.id)===productId):null;
- const payload={name,category,price,brand:$("#p-brand").value.trim()||null,sku:$("#p-sku").value.trim()||null,promo_price:promo,image_url:$("#p-image").value.trim()||null,description:$("#p-desc").value.trim()||null,published:existing?existing.published:true};
- const result=productId?await db.from('products').update(payload).eq('id',productId):await db.from('products').insert(payload);
- if(result.error){toast('Erreur : '+result.error.message);return}toast(productId?'Produit modifié.':'Produit ajouté.');await loadProducts();await loadAdminData();adminTab='products';renderAdminTab();
+ const skuValue=$("#p-sku").value.trim();
+ if(skuValue){
+  const normalizedSku=skuValue.toLocaleLowerCase();
+  const duplicateSku=adminProducts.find(x=>String(x.sku||"").trim().toLocaleLowerCase()===normalizedSku&&String(x.id)!==String(productId||""));
+  if(duplicateSku){toast("Cette référence SKU est déjà utilisée par le produit « "+duplicateSku.name+" ». Choisissez une référence différente.");return}
+ }
+ if(productId&&!existing){toast("Produit introuvable dans le catalogue chargé. Rechargez la liste avant de modifier.");return}
+ const stock=Number($("#p-stock").value);
+ if(!productId&&(!Number.isInteger(stock)||stock<0)){toast("Le stock initial doit être un nombre entier positif ou nul.");return}
+ const payload={name,category,category_id:categoryId,subcategory_id:subcategoryId,price,brand:$("#p-brand").value.trim()||null,sku:$("#p-sku").value.trim()||null,promo_price:promo,image_url:$("#p-image").value.trim()||null,description:$("#p-desc").value.trim()||null,published:existing?existing.published:true,is_featured:$("#p-featured").checked,featured_sort:Number($("#p-featured-sort").value||0)};
+ if(productId){
+  const {data:updated,error:updateError}=await db.from('products').update(payload).eq('id',productId).select('id').maybeSingle();
+  if(updateError){toast('Erreur : '+updateError.message);return}
+  if(!updated){toast("Aucune modification enregistrée : produit introuvable ou accès refusé.");return}
+ }else{
+  payload.stock=0;
+  const {data:created,error}=await db.from('products').insert(payload).select('id').single();
+  if(error){toast('Erreur : '+error.message);return}
+  if(stock>0){
+   const {error:movementError}=await db.from('stock_movements').insert({product_id:created.id,movement_type:'adjustment',quantity_change:stock,reason:'Stock initial à la création du produit',reference_key:'initial-stock:'+created.id,created_by:currentUser?.id||null});
+   if(movementError){
+    toast('Produit créé, mais stock initial non enregistré. Ouvrez Gestion du stock pour ajouter '+stock+' unité(s).');
+    await loadProducts();await loadAdminData();adminTab='stock';renderAdminTab();return;
+   }
+  }
+ }
+ toast(productId?'Produit modifié.':'Produit ajouté.');await loadProducts();await loadAdminData();adminTab='products';renderAdminTab();
 }
 async function savePromotion(){
  const rate=Number($("#promo-rate").value),active=$("#promo-active").checked,start=$("#promo-start").value||null,end=$("#promo-end").value||null;
  if(!Number.isFinite(rate)||rate<0||rate>90){toast('Le taux doit être compris entre 0 et 90 %.');return}
+ if(end&&!start){toast('Indiquez une date de début avant de définir la fin de la campagne.');return}
  if(start&&end&&new Date(end)<=new Date(start)){toast('La date de fin doit être après la date de début.');return}
+ if((start&&!Number.isFinite(new Date(start).getTime()))||(end&&!Number.isFinite(new Date(end).getTime()))){toast('Les dates de la campagne sont invalides.');return}
  const payload={active,discount_rate:rate,starts_at:start?new Date(start).toISOString():null,ends_at:end?new Date(end).toISOString():null,updated_at:new Date().toISOString()};
  const {error}=await db.from('promotion_settings').upsert({id:1,...payload});if(error){toast('Impossible d’enregistrer la campagne : '+error.message);return}
  toast('Campagne enregistrée.');await loadPromoConfig();await loadAdminData();adminTab='promotion';renderAdminTab();renderCart();renderProducts();
@@ -288,9 +554,24 @@ async function savePromotion(){
 document.addEventListener('change',async e=>{
  if(e.target.id==='csv-file'){const preview=$('#csv-preview'),run=$('#csv-run');csvImportRows=[];csvValidationErrors=[];run.disabled=true;if(!e.target.files?.[0]){preview.textContent='Aucun fichier sélectionné.';return}csvImportFileName=e.target.files[0].name;preview.textContent='Analyse du fichier…';try{const result=await prepareCSVImport(e.target.files[0]);csvImportRows=result.rows;csvValidationErrors=result.errors;const sample=result.rows.slice(0,20);preview.innerHTML=`<b>${esc(csvImportFileName)}</b><p>${result.total} ligne(s) détectée(s) · ${result.valid} valide(s) · ${result.duplicate} doublon(s) interne(s)</p><p>${result.errors.length?`${result.errors.length} erreur(s) détectée(s)`:'Aucune erreur de validation.'}</p><div class="csv-preview-table"><table><thead><tr><th>Ligne</th><th>SKU</th><th>Nom</th><th>Catégorie</th><th>Prix</th></tr></thead><tbody>${sample.map(r=>`<tr><td>${r._line}</td><td>${esc(r.sku||'—')}</td><td>${esc(r.name)}</td><td>${esc(r.category)}</td><td>${esc(r.price)}</td></tr>`).join('')}</tbody></table></div>${result.errors.length?`<details><summary>Voir les erreurs</summary><ul>${result.errors.slice(0,50).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}`;run.disabled=!result.rows.length}catch(err){preview.textContent=err.message;run.disabled=true}}
  const status=e.target.closest('[data-order-status]');
- if(status&&db&&isAdmin){const {error}=await db.from('orders').update({status:status.value}).eq('id',status.dataset.orderStatus);if(error){toast('Statut non modifié : '+error.message);await loadAdminData()}else{const order=adminOrders.find(x=>String(x.id)===status.dataset.orderStatus);if(order)order.status=status.value;toast('Statut de commande mis à jour.');renderAdminTab()}}
+ if(status&&db&&isAdmin){
+  const order=adminOrders.find(x=>String(x.id)===status.dataset.orderStatus),previous=order?.status||'pending',next=status.value;
+  if(!order){toast('Commande introuvable.');await loadAdminData();return}
+  if(previous==='cancelled'&&next!=='cancelled'){toast('Une commande annulée ne peut pas être réactivée.');status.value=previous;return}
+  if(previous===next)return;
+  status.disabled=true;
+  try{
+   const {data:updated,error}=await db.from('orders').update({status:next}).eq('id',status.dataset.orderStatus).select('id').maybeSingle();
+   if(error)throw error;
+   if(!updated)throw new Error("Aucune commande modifiée : accès refusé ou commande introuvable.");
+   order.status=next;toast('Statut de commande mis à jour.');renderAdminTab();
+  }catch(error){toast('Statut non modifié : '+(error.message||'erreur réseau.'));status.value=previous;status.disabled=false}
+ }
 });
+
 document.addEventListener("click",async e=>{
+ if(e.target.closest("#privacy-link")){e.preventDefault();privacyModal(true);return}
+ if(e.target.closest("[data-privacy-close]")||e.target.id==="privacy-backdrop"){privacyModal(false);return}
  if(e.target.closest("#place-order")){await submitOrder();return}
  const printBtn=e.target.closest('[data-print-order]');
  if(printBtn){const order=adminOrders.find(o=>String(o.id)===printBtn.dataset.printOrder);if(order)printOrder(order);return}
@@ -304,15 +585,18 @@ document.addEventListener("click",async e=>{
  const jump=e.target.closest('[data-jump-tab]');if(jump){adminTab=jump.dataset.jumpTab;renderAdminTab();return}
  if(e.target.closest("#checkout-close")||e.target.id==="checkout-backdrop")checkoutModal(false);
  const add=e.target.closest("[data-add]");if(add)addCart(add.dataset.add);
- const qty=e.target.closest("[data-qty]");if(qty){const l=cart.find(x=>x.id===qty.dataset.qty);if(l){l.qty+=Number(qty.dataset.delta);if(l.qty<=0)cart=cart.filter(x=>x.id!==l.id);saveCart()}}
+ const qty=e.target.closest("[data-qty]");if(qty){const l=cart.find(x=>x.id===qty.dataset.qty);if(l){const delta=Number(qty.dataset.delta);const p=products.find(x=>x.id===l.id);const stock=Number(p?.stock||0);if(delta>0&&l.qty+delta>stock){toast("La quantité demandée dépasse le stock disponible.");return}l.qty+=delta;if(l.qty<=0)cart=cart.filter(x=>x.id!==l.id);saveCart()}}
  const rem=e.target.closest("[data-remove]");if(rem){cart=cart.filter(x=>x.id!==rem.dataset.remove);saveCart()}
- const edit=e.target.closest('[data-edit-product]');if(edit&&db&&isAdmin){const product=adminProducts.find(x=>String(x.id)===edit.dataset.editProduct);if(product){adminTab='products';renderAdminTab();$("#p-id").value=product.id;$("#p-name").value=product.name||'';$("#p-category").value=product.category||ADMIN_CATEGORIES[0];$("#p-price").value=product.price??'';$("#p-brand").value=product.brand||'';$("#p-sku").value=product.sku||'';$("#p-promo").value=product.promo_price??'';$("#p-image").value=product.image_url||'';$("#p-desc").value=product.description||'';$("#p-save").textContent='Enregistrer les modifications';$("#p-cancel-edit").hidden=false;$("#p-name").focus()}return}
- const del=e.target.closest("[data-delete]");if(del&&db&&isAdmin){if(confirm("Supprimer ce produit ?")){const {error}=await db.from("products").delete().eq("id",del.dataset.delete);if(error)toast(error.message);else{await loadProducts();await loadAdminData();adminTab="products";renderAdminTab();toast("Produit supprimé.")}}}
- const cat=e.target.closest("[data-category]");if(cat){$("#category-filter").value=cat.dataset.category;renderProducts();$("#boutique").scrollIntoView()}
+ const adToggle=e.target.closest('[data-ad-toggle]');if(adToggle&&db&&isAdmin){const next=adToggle.dataset.active!=='true';const {error}=await db.from('advertisements').update({is_active:next,updated_at:new Date().toISOString()}).eq('id',adToggle.dataset.adToggle);if(error)toast('Modification impossible : '+error.message);else{await loadAdvertisements();adminTab='advertisements';renderAdminTab();toast('Annonce mise à jour.')}return}
+ const edit=e.target.closest('[data-edit-product]');if(edit&&db&&isAdmin){const product=adminProducts.find(x=>String(x.id)===edit.dataset.editProduct);if(product){adminTab='products';renderAdminTab();$("#p-id").value=product.id;$("#p-name").value=product.name||'';$("#p-category").value=product.category_id||categories[0]?.id||"";$("#p-category").dispatchEvent(new Event("change"));$("#p-subcategory").value=product.subcategory_id||"";$("#p-price").value=product.price??'';$("#p-stock").value=Number(product.stock||0);$("#p-stock").disabled=true;$("#p-brand").value=product.brand||'';$("#p-sku").value=product.sku||'';$("#p-promo").value=product.promo_price??'';$("#p-image").value=product.image_url||'';$("#p-featured").checked=product.is_featured===true;$("#p-featured-sort").value=Number(product.featured_sort||0);$("#p-desc").value=product.description||'';$("#p-save").textContent='Enregistrer les modifications';$("#p-cancel-edit").hidden=false;$("#p-name").focus()}return}
+ const del=e.target.closest("[data-delete]");if(del&&db&&isAdmin){const product=adminProducts.find(p=>String(p.id)===String(del.dataset.delete));if(product&&!product.published){toast("Ce produit est déjà masqué.");return}if(confirm("Masquer ce produit du catalogue sans supprimer son historique de ventes et de stock ?")){const {error}=await db.from("products").update({published:false,updated_at:new Date().toISOString()}).eq("id",del.dataset.delete);if(error)toast("Masquage impossible : "+error.message);else{await loadProducts();await loadAdminData();adminTab="products";renderAdminTab();toast("Produit masqué du catalogue. Son historique est conservé.")}}}
+ const cat=e.target.closest("[data-category]");if(cat){const requested=cat.dataset.category;const filter=$("#category-filter");if(requested==="__promotions__"||normalizeText(requested)==="promotions"){filter.value="__promotions__"}else{const match=categories.find(item=>normalizeText(item.name)===normalizeText(requested));filter.value=match?String(match.id):[...filter.options].some(option=>option.value===requested)?requested:""}updateSubcategoryFilter();renderProducts();$("#boutique").scrollIntoView({behavior:"smooth"});$("#main-nav").classList.remove("show")}
 });
-$("#search").addEventListener("input",renderProducts);$("#category-filter").addEventListener("change",renderProducts);$("#sort").addEventListener("change",renderProducts);
+$("#search").addEventListener("input",renderProducts);$("#search-submit")?.addEventListener("click",()=>{$("#boutique").scrollIntoView({behavior:"smooth"});$("#search").focus()});$("#category-filter").addEventListener("change",()=>{updateSubcategoryFilter();renderProducts()});$("#subcategory-filter")?.addEventListener("change",renderProducts);$("#sort").addEventListener("change",renderProducts);
+$("#c-city")?.addEventListener("input",updateCheckoutPriceSummary);
+$("#c-city")?.addEventListener("change",updateCheckoutPriceSummary);
 $("#cart-open").onclick=()=>drawer(true);$("#account-open").onclick=async()=>{await refreshAuth();$("#account-modal").classList.add("open");$("#account-backdrop").classList.add("open");accountPanel()};$("#account-backdrop").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#account-close").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#drawer-backdrop").onclick=()=>drawer(false);document.querySelectorAll("[data-close]").forEach(x=>x.onclick=()=>drawer(false));
 $("#checkout").onclick=startWebsiteOrder;$("#admin-open").onclick=()=>{modal(true);adminLogin()};$("#modal-backdrop").onclick=()=>modal(false);document.querySelectorAll("[data-modal-close]").forEach(x=>x.onclick=()=>modal(false));
 $("#menu-toggle").onclick=()=>$("#main-nav").classList.toggle("show");document.querySelectorAll("#main-nav a").forEach(a=>a.onclick=()=>$("#main-nav").classList.remove("show"));
-$("#year").textContent=new Date().getFullYear();loadProducts();renderCart();refreshAuth();if(db){loadPromoConfig().then(()=>{renderProducts();renderCart()});db.auth.onAuthStateChange(()=>refreshAuth())}
+$("#year").textContent=new Date().getFullYear();loadProducts();loadAdvertisements();renderCart();refreshAuth();if(db){loadPromoConfig().then(()=>{renderProducts();renderCart()});db.auth.onAuthStateChange((event)=>{if(event==="SIGNED_OUT"){currentUser=null;isAdmin=false;adminOrders=[];adminProducts=[];adminCustomers=[];adminStockMovements=[];adminReturns=[];adminExchanges=[];adminLosses=[];const accountButton=$("#account-open");if(accountButton){accountButton.querySelector("small").textContent="Compte";accountButton.title="Créer un compte / Se connecter"}$("#admin-modal")?.classList.remove("open","admin-modal-wide");$("#modal-backdrop")?.classList.remove("open")}else refreshAuth()})}
 if(!configured())console.info("Mode aperçu local actif. Consultez README.md pour connecter Supabase.");
