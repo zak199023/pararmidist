@@ -43,10 +43,11 @@ function promoIsActive(){
 }
 function priceInfo(p){
  const hasProductPromo=p.promo_price!==null&&p.promo_price!==undefined&&Number(p.promo_price)>0;
- const base=hasProductPromo?Number(p.promo_price):Number(p.price);
+ const original=Number(p.price);
+ const saleBase=hasProductPromo?Number(p.promo_price):original;
  const rate=(!hasProductPromo&&promoIsActive())?Number(promoConfig.discount_rate??5):0;
- const final=Math.round((base*(1-rate/100)+Number.EPSILON)*100)/100;
- return {base,final,rate,hasProductPromo,compareAt:Number(p.price),saving:Math.round((base-final+Number.EPSILON)*100)/100};
+ const final=Math.round((saleBase*(1-rate/100)+Number.EPSILON)*100)/100;
+ return {base:original,final,rate,hasProductPromo,compareAt:original,saving:Math.round((original-final+Number.EPSILON)*100)/100};
 }
 async function loadPromoConfig(){
  if(!db)return;
