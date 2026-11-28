@@ -550,7 +550,7 @@ document.addEventListener('change',async e=>{
   }catch(error){toast('Statut non modifié : '+(error.message||'erreur réseau.'));status.value=previous;status.disabled=false}
  }
 });
-document.addEventListener("submit",e=>{const form=e.target.closest("#newsletter-form");if(!form)return;e.preventDefault();const email=$("#newsletter-email").value.trim();if(!email)return;const subject=encodeURIComponent("Inscription aux actualités Rmi-Dist");const body=encodeURIComponent("Bonjour Rmi-Dist,\nJe souhaite recevoir vos annonces à cette adresse : "+email);window.location.href="mailto:pararmidist@gmail.com?subject="+subject+"&body="+body;toast("Votre application e-mail va s’ouvrir pour envoyer votre demande.");});
+
 document.addEventListener("click",async e=>{
  if(e.target.closest("#privacy-link")){e.preventDefault();privacyModal(true);return}
  if(e.target.closest("[data-privacy-close]")||e.target.id==="privacy-backdrop"){privacyModal(false);return}
