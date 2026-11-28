@@ -170,11 +170,21 @@ async function loadProducts(){
  }else{products=sample;reconcileCartWithProducts()}
  renderProducts();
 }
+function productCardMarkup(p,compact=false){
+ const pi=priceInfo(p),stock=Number(p.stock||0),mainCategory=categoryNameById(p.category_id)||p.category||"",subCategory=subcategoryNameById(p.subcategory_id);
+ const old=pi.hasProductPromo&&pi.compareAt>pi.final?'<span class="old-price">'+money(pi.compareAt)+'</span>':"";
+ const discount=pi.hasProductPromo&&pi.compareAt>pi.final?'<span class="price-discount-note">−'+Math.round((1-pi.final/pi.compareAt)*100)+'%</span>':pi.rate?'<span class="price-discount-note">−'+pi.rate+'%</span>':"";
+ return '<article class="product-card'+(compact?' featured-product-card':'')+'"><div class="product-image">'+(p.image_url?'<img src="'+esc(p.image_url)+'" alt="'+esc(p.name)+'" loading="lazy">':'<div class="product-placeholder">✿</div>')+'</div><div class="product-info"><div class="product-brand">'+esc(p.brand||"Rmi-Dist")+'</div><div class="product-name">'+esc(p.name)+'</div><div class="product-meta">'+esc(mainCategory)+(subCategory?' · '+esc(subCategory):"")+'</div><div class="product-buy"><div class="price">'+money(pi.final)+' '+discount+old+'<small class="stock-label">'+(stock>0?"Disponible":"Indisponible")+'</small></div><button class="mini-btn" data-add="'+esc(p.id)+'" '+(stock<=0?"disabled":"")+'>'+(stock>0?"🛒 Ajouter au panier":"Indisponible")+'</button></div></div></article>';
+}
+function renderFeaturedProducts(){
+ const host=$("#featured-products");if(!host)return;
+ const list=products.filter(p=>p.published!==false).slice(0,5);
+ host.innerHTML=list.length?list.map(p=>productCardMarkup(p,true)).join(""):'<div class="empty">Les nouveautés seront affichées ici dès leur disponibilité.</div>';
+}
 function renderProducts(){
  const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,subcat=$("#subcategory-filter")?.value||"",sort=$("#sort").value;
  let list=products.filter(p=>{
-  const mainCategory=categoryNameById(p.category_id)||p.category||"";
-  const subCategory=subcategoryNameById(p.subcategory_id);
+  const mainCategory=categoryNameById(p.category_id)||p.category||"",subCategory=subcategoryNameById(p.subcategory_id);
   const matchesQuery=!q||[p.name,p.brand,p.category,mainCategory,subCategory,p.sku].join(" ").toLowerCase().includes(q);
   const matchesCategory=!cat||(cat==="__promotions__"?(Number(p.promo_price)>0||(!p.promo_price&&promoIsActive())):(String(p.category_id)===cat||normalizeText(mainCategory)===normalizeText(cat)));
   const matchesSubcategory=!subcat||String(p.subcategory_id)===subcat;
@@ -183,11 +193,9 @@ function renderProducts(){
  if(sort==="price-asc")list.sort((a,b)=>priceInfo(a).final-priceInfo(b).final);
  if(sort==="price-desc")list.sort((a,b)=>priceInfo(b).final-priceInfo(a).final);
  if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name,"fr"));
- $("#product-total").textContent=`${list.length} produit(s)`;
- $("#products").innerHTML=list.length?list.map(p=>{
-  const pi=priceInfo(p),stock=Number(p.stock||0),mainCategory=categoryNameById(p.category_id)||p.category||"",subCategory=subcategoryNameById(p.subcategory_id);
-  return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(mainCategory)}${subCategory?` · ${esc(subCategory)}`:""}</div><div class="product-buy"><div class="price">${money(pi.final)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}%</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}<small class="stock-label">${stock>0?"Disponible":"Indisponible"}</small></div><button class="mini-btn" data-add="${esc(p.id)}" ${stock<=0?"disabled":""}>${stock>0?"Ajouter +":"Indisponible"}</button></div></div></article>`;
- }).join(''):'<div class="empty">Aucun produit ne correspond à cette sélection pour le moment.</div>';
+ $("#product-total").textContent=list.length+' produit(s)';
+ $("#products").innerHTML=list.length?list.map(p=>productCardMarkup(p)).join(""):'<div class="empty">Aucun produit ne correspond à cette sélection pour le moment.</div>';
+ renderFeaturedProducts();
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function saveCart(){try{localStorage.setItem("prd-cart",JSON.stringify(cart))}catch(error){console.warn("Panier non sauvegardé sur cet appareil :",error);toast("Le panier reste disponible pendant cette session, mais ne peut pas être sauvegardé sur cet appareil.")}renderCart()}
@@ -528,6 +536,7 @@ document.addEventListener('change',async e=>{
   }catch(error){toast('Statut non modifié : '+(error.message||'erreur réseau.'));status.value=previous;status.disabled=false}
  }
 });
+document.addEventListener("submit",e=>{const form=e.target.closest("#newsletter-form");if(!form)return;e.preventDefault();const email=$("#newsletter-email").value.trim();if(!email)return;const subject=encodeURIComponent("Inscription aux actualités Rmi-Dist");const body=encodeURIComponent("Bonjour Rmi-Dist,\nJe souhaite recevoir vos annonces à cette adresse : "+email);window.location.href="mailto:pararmidist@gmail.com?subject="+subject+"&body="+body;toast("Votre application e-mail va s’ouvrir pour envoyer votre demande.");});
 document.addEventListener("click",async e=>{
  if(e.target.closest("#privacy-link")){e.preventDefault();privacyModal(true);return}
  if(e.target.closest("[data-privacy-close]")||e.target.id==="privacy-backdrop"){privacyModal(false);return}
