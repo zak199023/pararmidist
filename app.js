@@ -450,7 +450,18 @@ async function savePromotion(){
 document.addEventListener('change',async e=>{
  if(e.target.id==='csv-file'){const preview=$('#csv-preview'),run=$('#csv-run');csvImportRows=[];csvValidationErrors=[];run.disabled=true;if(!e.target.files?.[0]){preview.textContent='Aucun fichier sélectionné.';return}csvImportFileName=e.target.files[0].name;preview.textContent='Analyse du fichier…';try{const result=await prepareCSVImport(e.target.files[0]);csvImportRows=result.rows;csvValidationErrors=result.errors;const sample=result.rows.slice(0,20);preview.innerHTML=`<b>${esc(csvImportFileName)}</b><p>${result.total} ligne(s) détectée(s) · ${result.valid} valide(s) · ${result.duplicate} doublon(s) interne(s)</p><p>${result.errors.length?`${result.errors.length} erreur(s) détectée(s)`:'Aucune erreur de validation.'}</p><div class="csv-preview-table"><table><thead><tr><th>Ligne</th><th>SKU</th><th>Nom</th><th>Catégorie</th><th>Prix</th></tr></thead><tbody>${sample.map(r=>`<tr><td>${r._line}</td><td>${esc(r.sku||'—')}</td><td>${esc(r.name)}</td><td>${esc(r.category)}</td><td>${esc(r.price)}</td></tr>`).join('')}</tbody></table></div>${result.errors.length?`<details><summary>Voir les erreurs</summary><ul>${result.errors.slice(0,50).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details>`:''}`;run.disabled=!result.rows.length}catch(err){preview.textContent=err.message;run.disabled=true}}
  const status=e.target.closest('[data-order-status]');
- if(status&&db&&isAdmin){const {error}=await db.from('orders').update({status:status.value}).eq('id',status.dataset.orderStatus);if(error){toast('Statut non modifié : '+error.message);await loadAdminData()}else{const order=adminOrders.find(x=>String(x.id)===status.dataset.orderStatus);if(order)order.status=status.value;toast('Statut de commande mis à jour.');renderAdminTab()}}
+ if(status&&db&&isAdmin){
+  const order=adminOrders.find(x=>String(x.id)===status.dataset.orderStatus),previous=order?.status||'pending',next=status.value;
+  if(!order){toast('Commande introuvable.');await loadAdminData();return}
+  if(previous==='cancelled'&&next!=='cancelled'){toast('Une commande annulée ne peut pas être réactivée.');status.value=previous;return}
+  if(previous===next)return;
+  status.disabled=true;
+  try{
+   const {error}=await db.from('orders').update({status:next}).eq('id',status.dataset.orderStatus);
+   if(error)throw error;
+   order.status=next;toast('Statut de commande mis à jour.');renderAdminTab();
+  }catch(error){toast('Statut non modifié : '+(error.message||'erreur réseau.'));status.value=previous;status.disabled=false}
+ }
 });
 document.addEventListener("click",async e=>{
  if(e.target.closest("#privacy-link")){e.preventDefault();privacyModal(true);return}
