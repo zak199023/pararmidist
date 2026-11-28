@@ -70,10 +70,10 @@ async function fetchAllProducts(publishedOnly=false){
  return rows;
 }
 function shippingFeeForCity(city){
- const normalized=normalizeText(city).replace(/\\s+/g," ");
+ const normalized=normalizeText(city).replace(/\s+/g," ");
  if(!normalized)return null;
  if(normalized==="casablanca")return 0;
- const matches=shippingRates.filter(r=>normalizeText(r.city).replace(/\\s+/g," ")===normalized&&r.is_active===true);
+ const matches=shippingRates.filter(r=>normalizeText(r.city).replace(/\s+/g," ")===normalized&&r.is_active===true);
  if(matches.length!==1)return null;
  const fee=Number(matches[0].shipping_fee);
  return Number.isFinite(fee)&&fee>=0?fee:null;
