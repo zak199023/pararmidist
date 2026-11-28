@@ -223,6 +223,10 @@ async function loadCustomerOrders(){
 }
 
 function modal(open){$("#admin-modal").classList.toggle("open",open);$("#modal-backdrop").classList.toggle("open",open)}
+function privacyModal(open){
+ $("#privacy-modal")?.classList.toggle("open",open);
+ $("#privacy-backdrop")?.classList.toggle("open",open);
+}
 function adminLogin(){
  $("#admin-content").innerHTML=`<div class="admin-panel"><p class="admin-hint">${configured()?"Connectez-vous avec le compte administrateur créé dans Supabase.":"Mode aperçu : le catalogue affiché est une démonstration locale. Configurez Supabase pour activer l'administration sécurisée et la base de données."}</p>${configured()?`<label>E-mail administrateur</label><input id="admin-email" type="email"><label>Mot de passe</label><input id="admin-password" type="password"><button class="btn btn-dark full" id="admin-login">Se connecter</button>`:`<button class="btn btn-dark full" id="admin-ok">Fermer</button>`}</div>`;
  if(!configured())$("#admin-ok").onclick=()=>modal(false);
@@ -405,6 +409,8 @@ document.addEventListener('change',async e=>{
  if(status&&db&&isAdmin){const {error}=await db.from('orders').update({status:status.value}).eq('id',status.dataset.orderStatus);if(error){toast('Statut non modifié : '+error.message);await loadAdminData()}else{const order=adminOrders.find(x=>String(x.id)===status.dataset.orderStatus);if(order)order.status=status.value;toast('Statut de commande mis à jour.');renderAdminTab()}}
 });
 document.addEventListener("click",async e=>{
+ if(e.target.closest("#privacy-link")){e.preventDefault();privacyModal(true);return}
+ if(e.target.closest("[data-privacy-close]")||e.target.id==="privacy-backdrop"){privacyModal(false);return}
  if(e.target.closest("#place-order")){await submitOrder();return}
  const printBtn=e.target.closest('[data-print-order]');
  if(printBtn){const order=adminOrders.find(o=>String(o.id)===printBtn.dataset.printOrder);if(order)printOrder(order);return}
