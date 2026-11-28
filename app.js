@@ -343,7 +343,7 @@ async function runCSVImport(){
   const withSku=rows.filter(x=>x.sku),withoutSku=rows.filter(x=>!x.sku);
   // Charger tous les SKU existants par pages : .in('sku', ...) est sensible à la casse et ne détecte pas les variantes.
   const existingMap=new Map();let skuOffset=0;const skuPageSize=500;
-  while(true){const {data:found,error:findError}=await db.from('products').select('id,sku').not('sku','is',null).range(skuOffset,skuOffset+skuPageSize-1);if(findError)throw findError;for(const product of found||[]){const key=String(product.sku||'').trim().toLowerCase();if(key)existingMap.set(key,product)}if(!found||found.length<skuPageSize)break;skuOffset+=skuPageSize;}
+  while(true){const {data:found,error:findError}=await db.from('products').select('id,sku').not('sku','is',null).order('id',{ascending:true}).range(skuOffset,skuOffset+skuPageSize-1);if(findError)throw findError;for(const product of found||[]){const key=String(product.sku||'').trim().toLowerCase();if(key)existingMap.set(key,product)}if(!found||found.length<skuPageSize)break;skuOffset+=skuPageSize;}
   const existingSet=new Set(existingMap.keys());
   for(let i=0;i<withSku.length;i+=100){const batch=withSku.slice(i,i+100);let payload=batch.map(({_line,...x})=>{const key=String(x.sku||'').trim().toLowerCase();const existingProduct=existingMap.get(key);return {...x,sku:updateExisting&&existingProduct?existingProduct.sku:String(x.sku||'').trim()}});if(!updateExisting){const before=payload.length;payload=payload.filter(x=>!existingSet.has(String(x.sku).trim().toLowerCase()));skipped+=before-payload.length;}
    if(payload.length){const updateCount=updateExisting?payload.filter(x=>existingSet.has(String(x.sku).trim().toLowerCase())).length:0;const {error}=await db.from('products').upsert(payload,{onConflict:'sku'});if(error){for(const x of batch)failed.push(`Ligne ${x._line} : ${error.message}`)}else{updated+=updateCount;inserted+=payload.length-updateCount}}
@@ -463,7 +463,9 @@ async function saveAdminProduct(){
 async function savePromotion(){
  const rate=Number($("#promo-rate").value),active=$("#promo-active").checked,start=$("#promo-start").value||null,end=$("#promo-end").value||null;
  if(!Number.isFinite(rate)||rate<0||rate>90){toast('Le taux doit être compris entre 0 et 90 %.');return}
+ if(end&&!start){toast('Indiquez une date de début avant de définir la fin de la campagne.');return}
  if(start&&end&&new Date(end)<=new Date(start)){toast('La date de fin doit être après la date de début.');return}
+ if((start&&!Number.isFinite(new Date(start).getTime()))||(end&&!Number.isFinite(new Date(end).getTime()))){toast('Les dates de la campagne sont invalides.');return}
  const payload={active,discount_rate:rate,starts_at:start?new Date(start).toISOString():null,ends_at:end?new Date(end).toISOString():null,updated_at:new Date().toISOString()};
  const {error}=await db.from('promotion_settings').upsert({id:1,...payload});if(error){toast('Impossible d’enregistrer la campagne : '+error.message);return}
  toast('Campagne enregistrée.');await loadPromoConfig();await loadAdminData();adminTab='promotion';renderAdminTab();renderCart();renderProducts();
