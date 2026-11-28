@@ -264,7 +264,14 @@ async function submitOrder(){
   const ref=o.order_number||String(o.id).slice(0,8).toUpperCase();
   toast(`Merci ! Votre commande ${ref} a bien été enregistrée.`);
   showOrderConfirmation(o,ref);
- }catch(err){console.error(err);toast("Commande non enregistrée : "+(err.message||"erreur Supabase."))}
+ }catch(err){
+  console.error(err);
+  let message=err?.message||"erreur Supabase.";
+  if(err?.context&&typeof err.context.json==="function"){
+   try{const payload=await err.context.json();if(payload?.error)message=payload.error}catch(parseError){console.warn("Détail de réponse de commande indisponible.",parseError)}
+  }
+  toast("Commande non enregistrée : "+message);
+ }
  finally{btn.disabled=false;btn.textContent="Confirmer ma commande"}
 }
 
