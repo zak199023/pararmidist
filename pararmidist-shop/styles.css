@@ -292,3 +292,10 @@ footer{background:#720021;color:#fff;padding:28px clamp(20px,7vw,110px) 16px}
 
 /* Indicateurs de disponibilité dans l’administration */
 .stock-status{display:inline-block;margin:3px 0;padding:3px 7px;border-radius:5px;font-size:11px;font-weight:700;white-space:nowrap}.stock-status-out{background:#fde8e8;color:#a51d2d}.stock-status-low{background:#fff3d6;color:#855600}.stock-status-ok{background:#e4f4e9;color:#21683a}
+
+/* Sections dynamiques de la page d’accueil */
+.featured-products{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:18px}
+.advertisements-section[hidden]{display:none}.advertisements-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+.advertisement-card{display:grid;grid-template-columns:minmax(100px,34%) 1fr;align-items:center;gap:18px;padding:16px;border:1px solid #eadde2;border-radius:16px;background:#fff}
+.advertisement-card img{width:100%;height:150px;object-fit:cover;border-radius:12px}.advertisement-card h3{color:#7b173c;margin:5px 0}
+@media(max-width:560px){.advertisement-card{grid-template-columns:1fr}.advertisement-card img{height:170px}}
