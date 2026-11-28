@@ -177,6 +177,19 @@ async function loadProducts(){
  }else{products=sample;reconcileCartWithProducts()}
  renderProducts();
 }
+let advertisements = [];
+async function loadAdvertisements(){
+ if(!db)return;
+ const result=await db.from('advertisements').select('*').eq('is_active',true).order('sort_order',{ascending:true});
+ advertisements=result.error?[]:(result.data||[]);renderAdvertisements();
+}
+function renderAdvertisements(){
+ const host=$('#advertisements'),section=$('#annonces-publicitaires');if(!host||!section)return;
+ const now=Date.now(),rows=advertisements.filter(a=>(!a.starts_at||new Date(a.starts_at).getTime()<=now)&&(!a.ends_at||new Date(a.ends_at).getTime()>now));
+ host.replaceChildren();
+ rows.forEach(a=>{const card=document.createElement('article');card.className='advertisement-card';if(a.image_url){const img=document.createElement('img');img.src=a.image_url;img.alt=a.title;img.loading='lazy';card.append(img)}const copy=document.createElement('div'),title=document.createElement('h3'),body=document.createElement('p');title.textContent=a.title;body.textContent=a.body||'';copy.append(title,body);if(a.link_url){const link=document.createElement('a');link.className='btn btn-dark';link.href=a.link_url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=a.button_label||'En savoir plus';copy.append(link)}card.append(copy);host.append(card)});
+ section.hidden=rows.length===0;
+}
 function productCardMarkup(p,compact=false){
  const pi=priceInfo(p),stock=Number(p.stock||0),mainCategory=categoryNameById(p.category_id)||p.category||"",subCategory=subcategoryNameById(p.subcategory_id);
  const old=pi.hasProductPromo&&pi.compareAt>pi.final?'<span class="old-price">'+money(pi.compareAt)+'</span>':"";
