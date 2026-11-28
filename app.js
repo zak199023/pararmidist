@@ -56,6 +56,40 @@ async function loadPromoConfig(){
 function normalizeText(value){return String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase()}
 function categoryNameById(id){return categories.find(c=>String(c.id)===String(id))?.name||""}
 function subcategoryNameById(id){return subcategories.find(c=>String(c.id)===String(id))?.name||""}
+
+const CATEGORY_DISPLAY_ORDER=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Produits Maman & Bébé","Bien-être","Produits Naturels","Promotions","Soins Capillaires"];
+function orderedSavedCategories(){return [...categories].sort((a,b)=>{const ai=CATEGORY_DISPLAY_ORDER.indexOf(a.name),bi=CATEGORY_DISPLAY_ORDER.indexOf(b.name);return (ai<0?999:ai)-(bi<0?999:bi)||a.name.localeCompare(b.name,"fr")})}
+function renderSavedCategories(){
+ const host=$(".category-grid");if(!host||!categories.length)return;
+ const art={
+  "Cosmétiques & Beauté":'<img class="category-art" src="assets/category-1.jpg" alt="" loading="lazy">',
+  "Soins dermatologiques":'<img class="category-art" src="assets/category-2.jpg" alt="" loading="lazy">',
+  "Parapharmacie":'<img class="category-art" src="assets/category-3.jpg" alt="" loading="lazy">',
+  "Produits Maman & Bébé":'<img class="category-art" src="assets/category-4.jpg" alt="" loading="lazy">',
+  "Bien-être":'<img class="category-art" src="assets/category-5.jpg" alt="" loading="lazy">',
+  "Produits Naturels":'<span class="category-art category-emoji" aria-hidden="true">🌿</span>',
+  "Promotions":'<span class="category-art category-emoji" aria-hidden="true">🎁</span>',
+  "Soins Capillaires":'<span class="category-art category-emoji" aria-hidden="true">💇</span>'
+ };
+ const icons=["✿","♡","✚","♧","☘","🌿","🎁","✧"];
+ host.innerHTML=orderedSavedCategories().map((category,index)=>{
+  const count=subcategories.filter(item=>String(item.category_id)===String(category.id)).length;
+  const picture=art[category.name]||'<span class="category-art category-emoji" aria-hidden="true">'+icons[index%icons.length]+'</span>';
+  return '<button type="button" class="category-card" data-category="'+esc(category.name)+'" aria-label="Voir les produits de '+esc(category.name)+'">'+picture+'<span class="category-card-copy"><b>'+esc(category.name)+' <i>→</i></b><small>'+count+' sous-catégorie'+(count>1?'s':'')+'</small></span></button>';
+ }).join("");
+}
+function renderSavedCategoryNavigation(){
+ const nav=$("#main-nav");if(!nav||!categories.length)return;
+ const home=nav.querySelector('a[href="#"]:not([data-category])');
+ const contact=nav.querySelector('a[href="#contact"]');
+ nav.querySelectorAll("a[data-category]").forEach(link=>link.remove());
+ const links=orderedSavedCategories().map(category=>{
+  const link=document.createElement("a");link.href="#categories";link.dataset.category=category.name;link.textContent=category.name;return link;
+ });
+ const anchor=contact||null;
+ links.forEach(link=>nav.insertBefore(link,anchor));
+}
+
 async function fetchAllProducts(publishedOnly=false){
  let rows=[],offset=0,pageSize=500;
  while(true){
@@ -100,6 +134,7 @@ async function loadCommerceMetadata(){
  const cities=$("#shipping-city-options");
  if(cities)cities.innerHTML=shippingRates.map(r=>`<option value="${esc(r.city)}"></option>`).join('');
  updateSubcategoryFilter();
+ renderSavedCategories();renderSavedCategoryNavigation();
 }
 function updateSubcategoryFilter(){
  const mainId=$("#category-filter")?.value,filter=$("#subcategory-filter");
@@ -151,8 +186,8 @@ function renderProducts(){
  $("#product-total").textContent=`${list.length} produit(s)`;
  $("#products").innerHTML=list.length?list.map(p=>{
   const pi=priceInfo(p),stock=Number(p.stock||0),mainCategory=categoryNameById(p.category_id)||p.category||"",subCategory=subcategoryNameById(p.subcategory_id);
-  return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(mainCategory)}${subCategory?` · ${esc(subCategory)}`:""}</div><div class="product-buy"><div class="price">${money(pi.final)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}%</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}<small class="stock-label">${stock>0?`En stock : ${stock}`:"Rupture de stock"}</small></div><button class="mini-btn" data-add="${esc(p.id)}" ${stock<=0?"disabled":""}>${stock>0?"Ajouter +":"Indisponible"}</button></div></div></article>`;
- }).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+  return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(mainCategory)}${subCategory?` · ${esc(subCategory)}`:""}</div><div class="product-buy"><div class="price">${money(pi.final)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}%</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}<small class="stock-label">${stock>0?"Disponible":"Indisponible"}</small></div><button class="mini-btn" data-add="${esc(p.id)}" ${stock<=0?"disabled":""}>${stock>0?"Ajouter +":"Indisponible"}</button></div></div></article>`;
+ }).join(''):'<div class="empty">Aucun produit ne correspond à cette sélection pour le moment.</div>';
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function saveCart(){try{localStorage.setItem("prd-cart",JSON.stringify(cart))}catch(error){console.warn("Panier non sauvegardé sur cet appareil :",error);toast("Le panier reste disponible pendant cette session, mais ne peut pas être sauvegardé sur cet appareil.")}renderCart()}
