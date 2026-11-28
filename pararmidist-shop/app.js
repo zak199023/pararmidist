@@ -289,7 +289,7 @@ async function loadAdminData(){
  if(adminPromo)promoConfig=adminPromo;
  renderAdminTab();
 }
-function isRevenueOrder(o){return o.status==='delivered'||o.payment_status==='paid'}
+function isRevenueOrder(o){return o.status!=='cancelled'&&(o.status==='delivered'||o.payment_status==='paid')}
 function orderDate(o){return new Date(o.created_at||Date.now())}
 function customerRows(){return adminCustomers}
 function localDateString(date){const y=date.getFullYear(),m=String(date.getMonth()+1).padStart(2,"0"),d=String(date.getDate()).padStart(2,"0");return `${y}-${m}-${d}`}
