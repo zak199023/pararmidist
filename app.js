@@ -2,7 +2,7 @@
 const CONFIG = { supabaseUrl: "https://hzosrdvaajjfenbzjxhg.supabase.co", supabaseAnonKey: "sb_publishable_AF7DhI63sGlRQXtnGZ3l-w_9EBLu1yQ", whatsapp: "212660622369" };
 const money = n => new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(Number(n||0));
 const $ = s => document.querySelector(s);
-let db = null, products = [], cart = JSON.parse(localStorage.getItem("prd-cart")||"[]"), isAdmin = false;
+let db = null, products = [], categories = [], subcategories = [], cart = JSON.parse(localStorage.getItem("prd-cart")||"[]"), isAdmin = false;
 let promoConfig = {active:false, discount_rate:5, starts_at:null, ends_at:null};
 let promoConfigLoaded = false;
 let adminOrders = [], adminProducts = [], adminCustomers = [], adminPromo = null, adminPromoError = null, adminTab = "overview";
@@ -33,19 +33,80 @@ async function loadPromoConfig(){
  const {data,error}=await db.from("promotion_settings").select("active,discount_rate,starts_at,ends_at").eq("id",1).maybeSingle();
  if(!error&&data){promoConfig=data;promoConfigLoaded=true}else{promoConfig={active:false,discount_rate:5,starts_at:null,ends_at:null};promoConfigLoaded=false;if(error)console.warn("Paramètres promotionnels non chargés :",error.message)}
 }
+async function fetchProductsPagewise(publishedOnly=false){
+ const rows=[],pageSize=500;
+ for(let offset=0;offset<5000;offset+=pageSize){
+  let query=db.from("products").select("*").order("created_at",{ascending:false}).order("id",{ascending:true}).range(offset,offset+pageSize-1);
+  if(publishedOnly)query=query.eq("published",true);
+  const {data,error}=await query;
+  if(error)return {data:null,error};
+  rows.push(...(data||[]));
+  if(!data||data.length<pageSize)break;
+ }
+ return {data:rows,error:null};
+}
+const APPROVED_CATEGORY_ORDER=["Cosmétiques & Beauté","Soins dermatologiques","Parapharmacie","Produits Maman & Bébé","Bien-être","Produits Naturels","Promotions","Soins Capillaires"];
+const APPROVED_SUBCATEGORIES={
+ "Bien-être":["Minceur","Sommeil","Stress & détente","Vitalité"],
+ "Cosmétiques & Beauté":["Maquillage","Parfumerie","Protection solaire","Soins du corps","Soins du visage","Soins mains & ongles"],
+ "Parapharmacie":["Compléments alimentaires","Hygiène","Hygiène bucco-dentaire","Hygiène intime","Matériel médical","Premiers soins"],
+ "Produits Maman & Bébé":["Accessoires d'allaitement","Allaitement","Grossesse","Hygiène bébé","Soins bébé"],
+ "Produits Naturels":["Huiles naturelles","Plantes & tisanes","Soins naturels"],
+ "Promotions":["Promotions bébé","Promotions corps","Promotions visage"],
+ "Soins Capillaires":["Anti-chute","Après-shampoings","Masques","Shampoings","Traitements anti-poux"],
+ "Soins dermatologiques":["Acné","Cicatrices","Cicatrices & brûlures","Dépigmentation","Eczéma & peau sensible"]
+};
+function categoryByName(name){return categories.find(c=>c.name===name)||null}
+async function loadTaxonomy(){
+ if(!db)return;
+ const [catRes,subRes]=await Promise.all([
+  db.from("categories").select("id,name"),
+  db.from("subcategories").select("id,name,category_id")
+ ]);
+ if(catRes.error||subRes.error){console.warn("Taxonomie non chargée :",catRes.error?.message||subRes.error?.message);categories=[];subcategories=[];return}
+ categories=catRes.data||[];subcategories=subRes.data||[];
+ const select=$("#category-filter");
+ if(select){
+  const current=select.value;
+  select.innerHTML='<option value="">Toutes les catégories</option>'+
+   APPROVED_CATEGORY_ORDER.filter(n=>n!=="Promotions").map(n=>{const c=categoryByName(n);return c?'<option value="'+esc(c.id)+'">'+esc(n)+'</option>':""}).join("")+
+   '<option value="__promotions__">Promotions</option>';
+  if([...select.options].some(o=>o.value===current))select.value=current;
+ }
+ updateSubcategoryOptions();
+}
+function updateSubcategoryOptions(){
+ const select=$("#subcategory-filter");if(!select)return;
+ const categoryId=$("#category-filter")?.value||"";
+ const category=categories.find(c=>c.id===categoryId);
+ const allowed=category?APPROVED_SUBCATEGORIES[category.name]||[]:[];
+ const rows=category?subcategories.filter(s=>s.category_id===category.id&&allowed.includes(s.name)).sort((a,b)=>allowed.indexOf(a.name)-allowed.indexOf(b.name)):[];
+ select.innerHTML='<option value="">Toutes les sous-catégories</option>'+rows.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join("");
+ select.disabled=!category;
+}
 async function loadProducts(){
- if(db){const {data,error}=await db.from("products").select("*").eq("published",true).order("created_at",{ascending:false});if(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}else products=data||[]}
- else products=sample;
+ if(!db){products=sample;renderProducts();return}
+ await loadTaxonomy();
+ const {data,error}=await fetchProductsPagewise(true);
+ if(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}
+ else products=(data||[]).map(p=>({...p,category_rel:categories.find(c=>c.id===p.category_id)||null,subcategory_rel:subcategories.find(s=>s.id===p.subcategory_id)||null}));
  renderProducts();
 }
+function categoryMatches(product,categoryId,subcategoryId){
+ if(!categoryId)return !subcategoryId;
+ if(categoryId==="__promotions__")return (Number(product.promo_price)>0||(!product.promo_price&&promoIsActive()))&&!subcategoryId;
+ if(product.category_id)return product.category_id===categoryId&&(!subcategoryId||product.subcategory_id===subcategoryId);
+ const selected=categories.find(c=>c.id===categoryId);
+ return !!selected&&product.category===selected.name&&!subcategoryId;
+}
 function renderProducts(){
- const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,sort=$("#sort").value;
- let list=products.filter(p=>{const matchesQuery=!q||[p.name,p.brand,p.category,p.sku].join(" ").toLowerCase().includes(q);const matchesCategory=!cat||(cat==="__promotions__"?(Number(p.promo_price)>0||(!p.promo_price&&promoIsActive())):p.category===cat);return matchesQuery&&matchesCategory});
+ const q=$("#search").value.toLowerCase(),cat=$("#category-filter").value,subcat=$("#subcategory-filter")?.value||"",sort=$("#sort").value;
+ let list=products.filter(p=>(!q||[p.name,p.brand,p.category,p.category_rel?.name,p.subcategory_rel?.name,p.sku].join(" ").toLowerCase().includes(q))&&categoryMatches(p,cat,subcat));
  if(sort==="price-asc")list.sort((a,b)=>priceInfo(a).final-priceInfo(b).final);
  if(sort==="price-desc")list.sort((a,b)=>priceInfo(b).final-priceInfo(a).final);
  if(sort==="name")list.sort((a,b)=>a.name.localeCompare(b.name,"fr"));
- $("#product-total").textContent=`${list.length} produit(s)`;
- $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return `<article class="product-card"><div class="product-image">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy">`:`<div class="product-placeholder">✿</div>`}</div><div class="product-info"><div class="product-brand">${esc(p.brand||"Rmi-Dist")}</div><div class="product-name">${esc(p.name)}</div><div class="product-meta">${esc(p.category||"")}</div><div class="product-buy"><div class="price">${money(pi.base)} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="price-discount-note">−${Math.round((1-pi.base/pi.compareAt)*100)}%</span>`:pi.rate?`<span class="price-discount-note">−${pi.rate}% au panier</span>`:""} ${pi.hasProductPromo&&pi.compareAt>pi.base?`<span class="old-price">${money(pi.compareAt)}</span>`:""}</div><button class="mini-btn" data-add="${esc(p.id)}">Ajouter +</button></div></div></article>`}).join(''):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
+ $("#product-total").textContent=list.length+" produit(s)";
+ $("#products").innerHTML=list.length?list.map(p=>{const pi=priceInfo(p);return '<article class="product-card"><div class="product-image">'+(p.image_url?'<img src="'+esc(p.image_url)+'" alt="'+esc(p.name)+'" loading="lazy">':'<div class="product-placeholder">✿</div>')+'</div><div class="product-info"><div class="product-brand">'+esc(p.brand||"Rmi-Dist")+'</div><div class="product-name">'+esc(p.name)+'</div><div class="product-meta">'+esc(p.category_rel?.name||p.category||"")+(p.subcategory_rel?.name?' · '+esc(p.subcategory_rel.name):"")+'</div><div class="product-buy"><div class="price">'+money(pi.base)+' '+(pi.hasProductPromo&&pi.compareAt>pi.base?'<span class="price-discount-note">−'+Math.round((1-pi.base/pi.compareAt)*100)+'%</span>':pi.rate?'<span class="price-discount-note">−'+pi.rate+'% au panier</span>':"")+' '+(pi.hasProductPromo&&pi.compareAt>pi.base?'<span class="old-price">'+money(pi.compareAt)+'</span>':"")+'</div><button class="mini-btn" data-add="'+esc(p.id)+'">Ajouter +</button></div></div></article>'}).join(""):'<div class="empty">Aucun produit trouvé. Contactez-nous pour un conseil personnalisé.</div>';
 }
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function saveCart(){localStorage.setItem("prd-cart",JSON.stringify(cart));renderCart()}
@@ -308,9 +369,9 @@ document.addEventListener("click",async e=>{
  const rem=e.target.closest("[data-remove]");if(rem){cart=cart.filter(x=>x.id!==rem.dataset.remove);saveCart()}
  const edit=e.target.closest('[data-edit-product]');if(edit&&db&&isAdmin){const product=adminProducts.find(x=>String(x.id)===edit.dataset.editProduct);if(product){adminTab='products';renderAdminTab();$("#p-id").value=product.id;$("#p-name").value=product.name||'';$("#p-category").value=product.category||ADMIN_CATEGORIES[0];$("#p-price").value=product.price??'';$("#p-brand").value=product.brand||'';$("#p-sku").value=product.sku||'';$("#p-promo").value=product.promo_price??'';$("#p-image").value=product.image_url||'';$("#p-desc").value=product.description||'';$("#p-save").textContent='Enregistrer les modifications';$("#p-cancel-edit").hidden=false;$("#p-name").focus()}return}
  const del=e.target.closest("[data-delete]");if(del&&db&&isAdmin){if(confirm("Supprimer ce produit ?")){const {error}=await db.from("products").delete().eq("id",del.dataset.delete);if(error)toast(error.message);else{await loadProducts();await loadAdminData();adminTab="products";renderAdminTab();toast("Produit supprimé.")}}}
- const cat=e.target.closest("[data-category]");if(cat){$("#category-filter").value=cat.dataset.category;renderProducts();$("#boutique").scrollIntoView()}
+ const cat=e.target.closest("[data-category]");if(cat){const name=cat.dataset.category;$("#category-filter").value=name==="__promotions__"?"__promotions__":(categoryByName(name)?.id||"");updateSubcategoryOptions();renderProducts();$("#boutique").scrollIntoView()}
 });
-$("#search").addEventListener("input",renderProducts);$("#category-filter").addEventListener("change",renderProducts);$("#sort").addEventListener("change",renderProducts);
+$("#search").addEventListener("input",renderProducts);$("#category-filter").addEventListener("change",()=>{updateSubcategoryOptions();renderProducts()});$("#subcategory-filter")?.addEventListener("change",renderProducts);$("#sort").addEventListener("change",renderProducts);
 $("#cart-open").onclick=()=>drawer(true);$("#account-open").onclick=async()=>{await refreshAuth();$("#account-modal").classList.add("open");$("#account-backdrop").classList.add("open");accountPanel()};$("#account-backdrop").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#account-close").onclick=()=>{$("#account-modal").classList.remove("open");$("#account-backdrop").classList.remove("open")};$("#drawer-backdrop").onclick=()=>drawer(false);document.querySelectorAll("[data-close]").forEach(x=>x.onclick=()=>drawer(false));
 $("#checkout").onclick=startWebsiteOrder;$("#admin-open").onclick=()=>{modal(true);adminLogin()};$("#modal-backdrop").onclick=()=>modal(false);document.querySelectorAll("[data-modal-close]").forEach(x=>x.onclick=()=>modal(false));
 $("#menu-toggle").onclick=()=>$("#main-nav").classList.toggle("show");document.querySelectorAll("#main-nav a").forEach(a=>a.onclick=()=>$("#main-nav").classList.remove("show"));
