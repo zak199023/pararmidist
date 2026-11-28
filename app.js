@@ -106,12 +106,29 @@ function updateSubcategoryFilter(){
  filter.disabled=available.length===0;
  if([...filter.options].some(o=>o.value===current))filter.value=current;
 }
+function reconcileCartWithProducts(){
+ let removed=0,adjusted=0;
+ cart=cart.flatMap(line=>{
+  const product=products.find(p=>String(p.id)===String(line.id));
+  const stock=Number(product?.stock||0);
+  if(!product||!Number.isInteger(stock)||stock<1){removed++;return []}
+  if(line.qty>stock){line.qty=stock;adjusted++}
+  return [line];
+ });
+ if(removed||adjusted){
+  saveCart();
+  const messages=[];
+  if(removed)messages.push(`${removed} article(s) retiré(s), indisponible(s)`);
+  if(adjusted)messages.push(`${adjusted} quantité(s) ajustée(s) au stock`);
+  toast(messages.join(" · "));
+ }
+}
 async function loadProducts(){
  if(db){
   await loadCommerceMetadata();
-  try{products=await fetchAllProducts(true)}
+  try{products=await fetchAllProducts(true);reconcileCartWithProducts()}
   catch(error){console.error(error);toast("Impossible de charger le catalogue.");products=[]}
- }else products=sample;
+ }else{products=sample;reconcileCartWithProducts()}
  renderProducts();
 }
 function renderProducts(){
